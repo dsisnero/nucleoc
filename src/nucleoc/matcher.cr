@@ -171,7 +171,6 @@ module Nucleoc
       bonus = Array(UInt8).new(haystack_len, 0_u8)
       row_offs = Array(UInt16).new(needle_len, 0_u16)
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
-      matrix_cells = Array(MatrixCell).new((haystack_len + 1 - needle_len) * needle_len) { MatrixCell.new }
 
       debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello") || (haystack == "fooBarbaz1" && needle == "obr") || (haystack == "ab0123 456" && needle == "12356") || (haystack == "foo/bar/baz" && needle == "fbb")
 
@@ -243,10 +242,18 @@ module Nucleoc
       end
       matrix_row_offsets[needle_len - 1] = cumulative # Not used but for completeness
 
+      # Allocate matrix cells for backtracking (only needed when computing indices)
+      matrix_cells = if compute_indices
+                       Array(MatrixCell).new(cumulative) { MatrixCell.new }
+                     else
+                       Array(MatrixCell).new
+                     end
+
       if debug
         puts "Compressed matrix layout:"
         puts "  Total cells needed: #{cumulative}"
         puts "  Rectangular cells: #{(haystack_len + 1 - needle_len) * needle_len}"
+        puts "  Matrix cells allocated: #{matrix_cells.size}"
         puts "  Row offsets: #{matrix_row_offsets}"
         (0...needle_len - 1).each do |i|
           puts "  Row #{i}: offset=#{matrix_row_offsets[i]}, length=#{haystack_len - 1 - row_offs[i].to_i}"
@@ -620,7 +627,7 @@ module Nucleoc
       needle_len.times { indices << 0_u32 }
 
       width = current_row.size
-      debug = (needle_len == 2 && width == 2) || (needle_len == 3 && width == 3) || (needle_len == 5 && width == 4) || (needle_len == 9 && width == 6)
+      debug = true
       if debug
         puts "=== RECONSTRUCT DEBUG ==="
         puts "max_score_end: #{max_score_end}"
@@ -639,14 +646,23 @@ module Nucleoc
       # Iterate through rows in reverse
       if needle_len > 1
         # Calculate row positions from the end of matrix_cells (matching Rust's split_at logic)
-        # Rust: for each row i, takes width - (row_offs[i] - i) cells from end
+        # Each row i stores haystack_len - 1 - row_off cells
         rows = Array(Tuple(Int32, UInt16, Array(MatrixCell))).new(needle_len - 1)
         remaining_cells = matrix_cells[0, matrix_len]
+        haystack_len = width + needle_len - 1
+
+        if debug
+          puts "  haystack_len = #{haystack_len}"
+          puts "  Expected total cells: #{matrix_len}"
+        end
 
         (0...(needle_len - 1)).to_a.reverse.each do |i|
           row_off = row_offs[i]
-          relative_off = row_off.to_i - i
-          row_size = width - relative_off
+          row_size = haystack_len - 1 - row_off.to_i
+
+          if debug
+            puts "  Row #{i}: row_off=#{row_off}, row_size=#{row_size}, remaining_cells.size=#{remaining_cells.size}"
+          end
 
           # Take row_size cells from the end of remaining_cells
           split_idx = remaining_cells.size - row_size
@@ -656,18 +672,28 @@ module Nucleoc
           rows << {i, row_off, row_cells}
         end
 
+        if debug && remaining_cells.size > 0
+          puts "  WARNING: remaining_cells not empty: #{remaining_cells.size}"
+        end
+
         # rows[0] is last row (needle_len-2), rows[1] is previous, etc.
         row_index = 0
         row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) || (needle_len == 5 && width == 4) || (needle_len == 9 && width == 6) # Our test cases
         if debug
           puts "=== DEBUG reconstruct_optimal_path (Rust algorithm) ==="
           puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
           puts "row_offs: #{row_offs}, last_row_off: #{last_row_off}"
           puts "width: #{width}, matrix_len: #{matrix_len}"
           puts "rows sizes: #{rows.map { |_, _, r| r.size }}"
+          # Print each row's cells
+          rows.each_with_index do |(i, off, r), idx|
+            puts "Row #{i} (off=#{off}, size=#{r.size}):"
+            r.each_with_index do |cell, c|
+              puts "  col #{c}: p=#{cell.get(false)} m=#{cell.get(true)} data=#{cell.@data}"
+            end
+          end
         end
 
         loop do
