@@ -46,6 +46,7 @@ module Nucleoc
     MAX_MATRIX_SIZE  = 100 * 1024 # 100KB
     MAX_HAYSTACK_LEN = 2048
     MAX_NEEDLE_LEN   =  128
+    DEBUG            = true
 
     @config : Config
 
@@ -289,6 +290,13 @@ module Nucleoc
         end
       end
 
+      if debug
+        puts "Matrix cells after population (size #{matrix_cells.size}):"
+        matrix_cells.each_with_index do |cell, idx|
+          puts "  [#{idx}] data=#{cell.@data.to_s(2)} p=#{cell.get(false)} m=#{cell.get(true)}"
+        end
+      end
+
       # Find the best score in the last row
       last_row_off = row_offs[needle_len - 1]
       relative_last_row_off = last_row_off.to_i + 1 - needle_len
@@ -348,6 +356,7 @@ module Nucleoc
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
       if debug
         puts "=== DEBUG score_row_first ==="
+        puts "compute_indices: #{compute_indices}"
         puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
         puts "adj_next_row_off: #{adj_next_row_off}, relative_row_off: #{relative_row_off}, next_relative_row_off: #{next_relative_row_off}"
         puts "current_row size: #{current_row.size}"
@@ -378,6 +387,9 @@ module Nucleoc
 
         if compute_indices && matrix_idx < matrix_cells.size
           matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          if debug
+            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+          end
           matrix_idx += 1
         end
 
@@ -429,6 +441,9 @@ module Nucleoc
 
         if compute_indices && matrix_idx < matrix_cells.size
           matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          if debug
+            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+          end
           matrix_idx += 1
         end
 
@@ -455,6 +470,7 @@ module Nucleoc
       debug = haystack.size == 5 && needle_char == 'b' # Our test case
       if debug
         puts "=== DEBUG score_row ==="
+        puts "compute_indices: #{compute_indices}"
         puts "needle_idx: #{needle_idx}, needle_char: #{needle_char.inspect}, next_needle_char: #{next_needle_char.inspect}"
         puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
         puts "matrix_offset: #{matrix_offset}"
@@ -469,6 +485,9 @@ module Nucleoc
       # First loop: columns from row_off to next_row_off-1
       matrix_idx = matrix_offset
       (row_off.to_i...adj_next_row_off.to_i).each do |i|
+        if debug
+          puts "    first loop i=#{i}, relative_i=#{relative_i}"
+        end
         relative_i = i - relative_row_off
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
