@@ -265,7 +265,7 @@ module Nucleoc
       when Kind::Ascii
         io << @bytes.not_nil!
       else
-        @chars.not_nil!.each { |c| io << c }
+        @chars.not_nil!.each { |char| io << char }
       end
     end
 

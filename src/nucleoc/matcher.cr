@@ -804,9 +804,9 @@ module Nucleoc
       # Skip leading whitespace if needle doesn't start with whitespace
       leading_space = 0
       unless needle_chars[0]?.try(&.whitespace?)
-        haystack_chars.each_with_index do |ch, idx|
-          if ch.whitespace?
-            leading_space = idx + 1
+        haystack_chars.each_with_index do |char, index|
+          if char.whitespace?
+            leading_space = index + 1
           else
             break
           end
@@ -816,9 +816,9 @@ module Nucleoc
       return if haystack_chars.size - leading_space < needle_chars.size
 
       # Check prefix match
-      needle_chars.each_with_index do |nc, i|
-        hc = haystack_chars[leading_space + i]
-        return if Chars.normalize(hc, @config) != Chars.normalize(nc, @config)
+      needle_chars.each_with_index do |needle_char, idx|
+        hc = haystack_chars[leading_space + idx]
+        return if Chars.normalize(hc, @config) != Chars.normalize(needle_char, @config)
       end
 
       if compute_indices
@@ -858,9 +858,9 @@ module Nucleoc
       # Skip trailing whitespace if needle doesn't end with whitespace
       trailing_spaces = 0
       unless needle_chars[-1]?.try(&.whitespace?)
-        haystack_chars.reverse_each.each_with_index do |ch, idx|
-          if ch.whitespace?
-            trailing_spaces = idx + 1
+        haystack_chars.reverse_each.each_with_index do |char, index|
+          if char.whitespace?
+            trailing_spaces = index + 1
           else
             break
           end
@@ -873,9 +873,9 @@ module Nucleoc
       start_idx = effective_len - needle_chars.size
 
       # Check postfix match
-      needle_chars.each_with_index do |nc, i|
-        hc = haystack_chars[start_idx + i]
-        return if Chars.normalize(hc, @config) != Chars.normalize(nc, @config)
+      needle_chars.each_with_index do |needle_char, idx|
+        hc = haystack_chars[start_idx + idx]
+        return if Chars.normalize(hc, @config) != Chars.normalize(needle_char, @config)
       end
 
       if compute_indices
