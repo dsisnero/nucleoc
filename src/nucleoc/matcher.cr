@@ -28,8 +28,9 @@ module Nucleoc
       @data = 0_u8
     end
 
-    def set(p_matched : Bool, m_matched : Bool)
+    def set(p_matched : Bool, m_matched : Bool) : self
       @data = (p_matched ? 1_u8 : 0_u8) | (m_matched ? 2_u8 : 0_u8)
+      self
     end
 
     def get(m_matrix : Bool) : Bool
@@ -386,7 +387,7 @@ module Nucleoc
         current_prefix_bonus = current_prefix_bonus > PENALTY_GAP_EXTENSION ? current_prefix_bonus - PENALTY_GAP_EXTENSION : 0_u16
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           if debug
             puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
@@ -440,7 +441,7 @@ module Nucleoc
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           if debug
             puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
@@ -485,10 +486,10 @@ module Nucleoc
       # First loop: columns from row_off to next_row_off-1
       matrix_idx = matrix_offset
       (row_off.to_i...adj_next_row_off.to_i).each do |i|
+        relative_i = i - relative_row_off
         if debug
           puts "    first loop i=#{i}, relative_i=#{relative_i}"
         end
-        relative_i = i - relative_row_off
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
 
@@ -500,7 +501,10 @@ module Nucleoc
                  end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          if debug
+            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+          end
           matrix_idx += 1
         end
 
@@ -518,6 +522,9 @@ module Nucleoc
         i = adj_next_row_off.to_i + j
         relative_i = i - relative_row_off
         row_idx = next_relative_row_off + j
+        if debug
+          puts "    second loop j=#{j}, i=#{i}, relative_i=#{relative_i}, row_idx=#{row_idx}"
+        end
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
 
@@ -535,10 +542,16 @@ module Nucleoc
                                  else
                                    ScoreCell::UNMATCHED
                                  end
+          if debug
+            puts "      Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})"
+          end
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          if debug
+            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+          end
           matrix_idx += 1
         end
 
@@ -660,28 +673,37 @@ module Nucleoc
             end
           end
 
-          # col should be within row bounds
-          break if col < 0 || col >= row.size
+          # Avoid out of bounds access
+          if col < 0 || col >= row.size
+            # Still continue loop to handle state transitions
+            break
+          end
           next_matched = row[col].get(matched)
           if debug
             puts "  row[#{col}].get(#{matched}) = #{next_matched}"
           end
 
-          if matched
-            row_index += 1
-            if row_index < rows.size
-              row_idx, row_off, row = rows[row_index]
-              col += rows[row_index - 1][1].to_i - row_off.to_i # previous row_off - current row_off
-              if debug
-                puts "  Move to next row #{row_idx}, col adjustment to #{col}"
+          if matched || next_matched
+            if matched
+              row_index += 1
+              if row_index < rows.size
+                row_idx, row_off, row = rows[row_index]
+                col += rows[row_index - 1][1].to_i - row_off.to_i # previous row_off - current row_off
+                if debug
+                  puts "  Move to next row #{row_idx}, col adjustment to #{col}"
+                end
+              else
+                break
               end
-            else
-              break
             end
+            # If next_matched is true but matched is false, we found transition from gap to match
+            # Don't decrement col before moving to next row
+            col -= 1 unless next_matched && !matched
+            matched = next_matched
+          else
+            col -= 1
+            matched = next_matched
           end
-
-          col -= 1
-          matched = next_matched
         end
       end
     end
