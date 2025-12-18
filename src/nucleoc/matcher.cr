@@ -297,7 +297,10 @@ module Nucleoc
         puts "Finding best score in last row:"
         puts "last_row_off: #{last_row_off}, relative_last_row_off: #{relative_last_row_off}"
         puts "current_row size: #{current_row.size}"
-        puts "current_row scores: #{current_row.map(&.score).join(", ")}"
+        puts "current_row cells:"
+        current_row.each_with_index do |cell, idx|
+          puts "  [#{idx}] score=#{cell.score}, matched?=#{cell.matched?}, consecutive_bonus=#{cell.consecutive_bonus}"
+        end
       end
 
       best_score = 0_u16
@@ -594,44 +597,70 @@ module Nucleoc
 
       # Iterate through rows in reverse
       if needle_len > 1
-        row_idx = needle_len - 2
-        row_off = row_offs[row_idx]
+        # Calculate row positions from the end of matrix_cells (matching Rust's split_at logic)
+        # Rust: for each row i, takes width - (row_offs[i] - i) cells from end
+        rows = Array(Tuple(Int32, UInt16, Array(MatrixCell))).new(needle_len - 1)
+        remaining_cells = matrix_cells[0, matrix_len]
+
+        (0...(needle_len - 1)).to_a.reverse.each do |i|
+          row_off = row_offs[i]
+          relative_off = row_off.to_i - i
+          row_size = width - relative_off
+
+          # Take row_size cells from the end of remaining_cells
+          split_idx = remaining_cells.size - row_size
+          row_cells = remaining_cells[split_idx..]
+          remaining_cells = remaining_cells[0...split_idx]
+
+          rows << {i, row_off, row_cells}
+        end
+
+        # rows[0] is last row (needle_len-2), rows[1] is previous, etc.
+        row_index = 0
+        row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        # Calculate matrix positions for each row
-        row_matrix_starts = Array(Int32).new(needle_len - 1, 0)
-        offset = 0
-        (0...(needle_len - 1)).each do |i|
-          row_matrix_starts[i] = offset
-          relative_off = row_offs[i].to_i - i
-          offset += width - relative_off
+        debug = needle_len == 3 && width == 3 # Our test case
+        if debug
+          puts "=== DEBUG reconstruct_optimal_path ==="
+          puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
+          puts "row_offs: #{row_offs}, last_row_off: #{last_row_off}"
+          puts "width: #{width}, matrix_len: #{matrix_len}"
+          puts "rows sizes: #{rows.map { |_, _, r| r.size }}"
         end
 
         loop do
+          if debug
+            puts "  Loop: row_idx=#{row_idx}, col=#{col}, matched=#{matched}, row.size=#{row.size}"
+          end
+
           if matched
             indices[indices_start + row_idx] = start + col.to_u32 + row_off.to_u32
+            if debug
+              puts "  Set index #{row_idx} = #{start} + #{col} + #{row_off} = #{start + col.to_u32 + row_off.to_u32}"
+            end
           end
 
-          # Get next_matched from matrix
-          matrix_start = row_matrix_starts[row_idx]
-          cell_idx = matrix_start + col
-          next_matched = if cell_idx >= 0 && cell_idx < matrix_len
-                           matrix_cells[cell_idx].get(matched)
-                         else
-                           false
-                         end
-
-          if matched && row_idx > 0
-            next_row_off = row_offs[row_idx - 1]
-            col += row_off.to_i - next_row_off.to_i
-            row_idx -= 1
-            row_off = next_row_off
-          elsif row_idx == 0
-            break
+          # col should be within row bounds
+          break if col < 0 || col >= row.size
+          next_matched = row[col].get(matched)
+          if debug
+            puts "  row[#{col}].get(#{matched}) = #{next_matched}"
           end
 
-          # Prevent col from going negative
-          break if col <= 0
+          if matched
+            row_index += 1
+            if row_index < rows.size
+              row_idx, row_off, row = rows[row_index]
+              col += rows[row_index - 1][1].to_i - row_off.to_i # previous row_off - current row_off
+              if debug
+                puts "  Move to next row #{row_idx}, col adjustment to #{col}"
+              end
+            else
+              break
+            end
+          end
+
           col -= 1
           matched = next_matched
         end
