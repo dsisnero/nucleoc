@@ -154,7 +154,7 @@ module Nucleoc
 
       return if needle_len > haystack_len
 
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac")
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello")
 
       # Check if matrix would be too large - fall back to greedy
       cells = haystack_len * needle_len
@@ -173,7 +173,7 @@ module Nucleoc
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
       matrix_cells = Array(MatrixCell).new((haystack_len + 1 - needle_len) * needle_len) { MatrixCell.new }
 
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac")
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello")
 
       # Setup phase - normalize haystack and find first occurrence of each needle char
       prev_class = start > 0 ? Chars.char_class(haystack_chars[start - 1], @config) : @config.initial_char_class
@@ -661,7 +661,7 @@ module Nucleoc
         row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) # Our test case
+        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) || (needle_len == 5 && width == 4) # Our test cases
         if debug
           puts "=== DEBUG reconstruct_optimal_path (Rust algorithm) ==="
           puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
@@ -682,10 +682,9 @@ module Nucleoc
             end
           end
 
-          # Avoid out of bounds access
-          if col < 0 || col >= row.size
-            break
-          end
+          # Check bounds before accessing row[col]
+          break if col < 0 || col >= row.size
+
           next_matched = row[col].get(matched)
           if debug
             puts "  row[#{col}].get(#{matched}) = #{next_matched}"
@@ -704,6 +703,16 @@ module Nucleoc
 
           col -= 1
           matched = next_matched
+
+          # Special case: if col is negative but we just transitioned to matched,
+          # we need to set the index for this position (using col+1)
+          if col < 0 && matched
+            indices[indices_start + row_idx] = start + (col + 1).to_u32 + row_off.to_u32
+            if debug
+              puts "  Setting index for negative col transition: row_idx=#{row_idx}, col=#{col + 1}, row_off=#{row_off}"
+            end
+            break
+          end
         end
       end
     end
