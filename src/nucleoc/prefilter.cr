@@ -9,7 +9,7 @@ module Nucleoc
       haystack_bytes = haystack.bytes
       needle_bytes = needle.bytes
 
-      if @config.ignore_case
+      if @config.ignore_case?
         # Find first character (case insensitive)
         start = find_ascii_ignore_case(needle_bytes[0], haystack_bytes[0...(haystack_bytes.size - needle_bytes.size + 1)])
         return unless start

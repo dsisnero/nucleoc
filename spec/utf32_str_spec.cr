@@ -7,26 +7,26 @@ describe Nucleoc::Utf32Str do
       # Port of test_utf32str_ascii from Rust
 
       # ASCII strings
-      Nucleoc::Utf32Str.new("").is_ascii.should be_true
-      Nucleoc::Utf32Str.new("a").is_ascii.should be_true
-      Nucleoc::Utf32Str.new("a\nb").is_ascii.should be_true
-      Nucleoc::Utf32Str.new("\n\r").is_ascii.should be_true
+      Nucleoc::Utf32Str.new("").ascii?.should be_true
+      Nucleoc::Utf32Str.new("a").ascii?.should be_true
+      Nucleoc::Utf32Str.new("a\nb").ascii?.should be_true
+      Nucleoc::Utf32Str.new("\n\r").ascii?.should be_true
 
       # Non-ASCII strings
-      Nucleoc::Utf32Str.new("aü").is_ascii.should be_false
-      Nucleoc::Utf32Str.new("au\u{0308}").is_ascii.should be_false
+      Nucleoc::Utf32Str.new("aü").ascii?.should be_false
+      Nucleoc::Utf32Str.new("au\u{0308}").ascii?.should be_false
 
       # Windows-style newline (CRLF) is not ASCII in this context
-      Nucleoc::Utf32Str.new("a\r\nb").is_ascii.should be_false
-      Nucleoc::Utf32Str.new("ü\r\n").is_ascii.should be_false
-      Nucleoc::Utf32Str.new("\r\n").is_ascii.should be_false
+      Nucleoc::Utf32Str.new("a\r\nb").ascii?.should be_false
+      Nucleoc::Utf32Str.new("ü\r\n").ascii?.should be_false
+      Nucleoc::Utf32Str.new("\r\n").ascii?.should be_false
     end
 
     it "works with Utf32String as well" do
       # Test with Utf32String
-      Nucleoc::Utf32String.from("").slice.is_ascii.should be_true
-      Nucleoc::Utf32String.from("a").slice.is_ascii.should be_true
-      Nucleoc::Utf32String.from("aü").slice.is_ascii.should be_false
+      Nucleoc::Utf32String.from("").slice.ascii?.should be_true
+      Nucleoc::Utf32String.from("a").slice.ascii?.should be_true
+      Nucleoc::Utf32String.from("aü").slice.ascii?.should be_false
     end
   end
 

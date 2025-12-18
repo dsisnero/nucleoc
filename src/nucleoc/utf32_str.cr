@@ -90,8 +90,8 @@ module Nucleoc
       @kind == Kind::Ascii
     end
 
-    def is_ascii : Bool
-      ascii?
+    def ascii? : Bool
+      @kind.ascii?
     end
 
     def slice(range : Range(Int32, Int32)) : Utf32Str

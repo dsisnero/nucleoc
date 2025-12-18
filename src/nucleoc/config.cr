@@ -28,10 +28,10 @@ module Nucleoc
     property initial_char_class : CharClass
 
     # Whether to normalize latin script characters to ASCII (enabled by default)
-    property normalize : Bool
+    property? normalize : Bool
 
     # Whether to ignore casing
-    property ignore_case : Bool
+    property? ignore_case : Bool
 
     # Whether to provide a bonus to matches by their distance from the start
     # of the haystack. The bonus is fairly small compared to the normal gap
@@ -40,7 +40,7 @@ module Nucleoc
     # usecases where the expectation is that the user is typing the entire
     # match. For a full fzf-like fuzzy matcher/picker word segmentation and
     # explicit prefix literals should be used instead.
-    property prefer_prefix : Bool
+    property? prefer_prefix : Bool
 
     # Default configuration for nucleoc
     DEFAULT = new(

@@ -10,30 +10,30 @@ describe Nucleoc do
 
       nucleo.active_injectors.should eq(0)
 
-      injector = nucleo.injector
+      _injector = nucleo.injector
       nucleo.active_injectors.should eq(1)
 
-      injector2 = nucleo.injector
+      _injector2 = nucleo.injector
       nucleo.active_injectors.should eq(2)
 
-      injector2 = nil
+      _injector2 = nil
       GC.collect
       nucleo.active_injectors.should eq(1)
 
       nucleo.restart(false)
       nucleo.active_injectors.should eq(0)
 
-      injector3 = nucleo.injector
+      _injector3 = nucleo.injector
       nucleo.active_injectors.should eq(1)
 
       nucleo.tick(0)
       nucleo.active_injectors.should eq(1)
 
-      injector = nil
+      _injector = nil
       GC.collect
       nucleo.active_injectors.should eq(1)
 
-      injector3 = nil
+      _injector3 = nil
       GC.collect
       nucleo.active_injectors.should eq(0)
     end
@@ -50,9 +50,9 @@ describe Nucleoc do
       matches.size.should be > 0
 
       # Should match "hello world" and "hello there"
-      matches.any? { |m| m.item == "hello world" }.should be_true
-      matches.any? { |m| m.item == "hello there" }.should be_true
-      matches.any? { |m| m.item == "goodbye world" }.should be_false
+      matches.any? { |match| match.item == "hello world" }.should be_true
+      matches.any? { |match| match.item == "hello there" }.should be_true
+      matches.any? { |match| match.item == "goodbye world" }.should be_false
     end
 
     it "sorts matches by score" do

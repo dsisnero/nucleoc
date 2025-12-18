@@ -11,7 +11,7 @@ module Nucleoc
   end
 
   module Chars
-    def self.is_upper_case(c : Char) : Bool
+    def self.upper_case?(c : Char) : Bool
       c.uppercase?
     end
 
@@ -38,7 +38,7 @@ module Nucleoc
     private def self.non_ascii_char_class(c : Char) : CharClass
       if c.lowercase?
         CharClass::Lower
-      elsif is_upper_case(c)
+      elsif upper_case?(c)
         CharClass::Upper
       elsif c.number?
         CharClass::Number
@@ -66,7 +66,7 @@ module Nucleoc
 
     def self.normalize(c : Char, config : Config) : Char
       result = c
-      result = to_lower_case(result) if config.ignore_case
+      result = to_lower_case(result) if config.ignore_case?
       result
     end
 

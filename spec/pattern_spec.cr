@@ -183,30 +183,79 @@ describe Nucleoc::Pattern do
 
     it "handles case matching in atoms" do
       # Smart case (lowercase pattern = case insensitive)
-      atom = Nucleoc::Atom.parse("hello", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
-      # Should match both "hello" and "Hello"
+      atom1 = Nucleoc::Atom.parse("hello", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom1.ignore_case?.should be_true
 
       # Smart case (uppercase in pattern = case sensitive)
-      atom = Nucleoc::Atom.parse("Hello", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
-      # Should only match "Hello"
+      atom2 = Nucleoc::Atom.parse("Hello", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom2.ignore_case?.should be_false
 
       # Always case sensitive
-      atom = Nucleoc::Atom.parse("hello", Nucleoc::CaseMatching::Respect, Nucleoc::Normalization::Smart)
-      # Should only match "hello"
+      atom3 = Nucleoc::Atom.parse("hello", Nucleoc::CaseMatching::Respect, Nucleoc::Normalization::Smart)
+      atom3.ignore_case?.should be_false
 
       # Always case insensitive
-      atom = Nucleoc::Atom.parse("Hello", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
-      # Should match both "hello" and "Hello"
+      atom4 = Nucleoc::Atom.parse("Hello", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      atom4.ignore_case?.should be_true
     end
 
     it "handles normalization in atoms" do
       # With normalization
-      atom = Nucleoc::Atom.parse("café", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
-      # Should match both "café" and "cafe\u{0301}"
+      atom1 = Nucleoc::Atom.parse("café", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom1.normalize?.should be_true
 
       # Without normalization
-      atom = Nucleoc::Atom.parse("café", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Never)
-      # Should only match exact form
+      atom2 = Nucleoc::Atom.parse("café", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Never)
+      atom2.normalize?.should be_false
+    end
+
+    it "handles escape sequences correctly" do
+      # Port of escape() test from Rust pattern/tests.rs
+
+      # Test 1: "foo\\ bar" -> "foo bar"
+      atom = Nucleoc::Atom.parse("foo\\ bar", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("foo bar")
+
+      # Test 2: "\\!foo" -> "!foo" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("\\!foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("!foo")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 3: "\\'foo" -> "'foo" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("\\'foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("'foo")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 4: "\\^foo" -> "^foo" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("\\^foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("^foo")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 5: "foo\\$" -> "foo$" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("foo\\$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("foo$")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 6: "^foo\\$" -> "foo$" (AtomKind::Prefix)
+      atom = Nucleoc::Atom.parse("^foo\\$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("foo$")
+      atom.kind.should eq(Nucleoc::AtomKind::Prefix)
+
+      # Test 7: "\\^foo\\$" -> "^foo$" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("\\^foo\\$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("^foo$")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 8: "\\!^foo\\$" -> "!^foo$" (AtomKind::Fuzzy)
+      atom = Nucleoc::Atom.parse("\\!^foo\\$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("!^foo$")
+      atom.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+
+      # Test 9: "!\\^foo\\$" -> "^foo$" (AtomKind::Substring)
+      atom = Nucleoc::Atom.parse("!\\^foo\\$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      atom.needle.to_s.should eq("^foo$")
+      atom.kind.should eq(Nucleoc::AtomKind::Substring)
+      atom.negative?.should be_true
     end
   end
 end

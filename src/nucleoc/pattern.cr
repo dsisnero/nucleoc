@@ -40,11 +40,11 @@ module Nucleoc
 
   # A single pattern component that is matched with a single `Matcher` function.
   class Atom
-    property negative : Bool
+    property? negative : Bool
     property kind : AtomKind
     property needle : String
-    property ignore_case : Bool
-    property normalize : Bool
+    property? ignore_case : Bool
+    property? normalize : Bool
 
     def initialize(@needle : String, @kind : AtomKind = AtomKind::Fuzzy,
                    @ignore_case : Bool = true, @normalize : Bool = true,
@@ -207,7 +207,7 @@ module Nucleoc
           atom_score = if indices
                          current_indices = [] of UInt32
                          score = atom.match(matcher, haystack, current_indices)
-                         atom_indices.not_nil! << current_indices if score
+                         atom_indices.as(Array(Array(UInt32))) << current_indices if score
                          score
                        else
                          atom.match(matcher, haystack)

@@ -9,9 +9,9 @@ describe Nucleoc do
   describe "Config" do
     it "has default configuration" do
       config = Nucleoc::Config::DEFAULT
-      config.normalize.should be_true
-      config.ignore_case.should be_true
-      config.prefer_prefix.should be_false
+      config.normalize?.should be_true
+      config.ignore_case?.should be_true
+      config.prefer_prefix?.should be_false
     end
 
     # TODO: Fix this test - match_paths method needs debugging
@@ -94,7 +94,7 @@ describe Nucleoc do
       # Basic fuzzy match
       score = matcher.fuzzy_match("hello world", "hw")
       score.should_not be_nil
-      score.not_nil!.should be > 0
+      score.as(UInt16).should be > 0
 
       # No match
       matcher.fuzzy_match("hello world", "xyz").should be_nil
@@ -106,7 +106,7 @@ describe Nucleoc do
 
       score = matcher.fuzzy_indices("hello world", "hw", indices)
       score.should_not be_nil
-      score.not_nil!.should be > 0
+      score.as(UInt16).should be > 0
       indices.size.should eq(2)
     end
   end
@@ -118,7 +118,7 @@ describe Nucleoc do
       # Substring match
       score = matcher.substring_match("hello world", "world")
       score.should_not be_nil
-      score.not_nil!.should be > 0
+      score.as(UInt16).should be > 0
 
       # No match
       matcher.substring_match("hello world", "xyz").should be_nil
@@ -132,7 +132,7 @@ describe Nucleoc do
       # Prefix match
       score = matcher.prefix_match("hello world", "hello")
       score.should_not be_nil
-      score.not_nil!.should be > 0
+      score.as(UInt16).should be > 0
 
       # No match
       matcher.prefix_match("hello world", "world").should be_nil
@@ -144,7 +144,7 @@ describe Nucleoc do
       # Postfix match
       score = matcher.postfix_match("hello world", "world")
       score.should_not be_nil
-      score.not_nil!.should be > 0
+      score.as(UInt16).should be > 0
 
       # No match
       matcher.postfix_match("hello world", "hello").should be_nil

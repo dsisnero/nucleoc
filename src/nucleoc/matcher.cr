@@ -5,13 +5,13 @@ module Nucleoc
   private struct ScoreCell
     property score : UInt16
     property consecutive_bonus : UInt8
-    property matched : Bool
+    property? matched : Bool
 
     def initialize(@score : UInt16 = 0_u16, @consecutive_bonus : UInt8 = 0_u8, @matched : Bool = true)
     end
 
     def ==(other : ScoreCell) : Bool
-      @score == other.score && @consecutive_bonus == other.consecutive_bonus && @matched == other.matched
+      @score == other.score && @consecutive_bonus == other.consecutive_bonus && matched? == other.matched?
     end
 
     # UNMATCHED constant - if matched is true then consecutive_bonus is always at least
@@ -159,9 +159,8 @@ module Nucleoc
         return fuzzy_match_greedy_(haystack, needle, start, greedy_end, indices)
       end
 
-      # TODO: Optimal algorithm is incomplete - fall back to greedy for now
-      # This ensures tests pass while we work on fixing the optimal algorithm
-      return fuzzy_match_greedy_(haystack, needle, start, greedy_end, indices)
+      # Optimal algorithm implementation complete
+      # Continue with optimal matching
 
       # Allocate working arrays (simulating Rust's slab.alloc)
       # Work on the sliced haystack [start..end_idx]
@@ -211,7 +210,7 @@ module Nucleoc
       normalized_needle = needle_chars.map { |c| Chars.normalize(c, @config) }
 
       # Calculate prefix bonus for prefer_prefix mode
-      prefix_bonus = if @config.prefer_prefix
+      prefix_bonus = if @config.prefer_prefix?
                        if start == 0
                          MAX_PREFIX_BONUS * PREFIX_BONUS_SCALE
                        else
@@ -233,15 +232,21 @@ module Nucleoc
 
       # Populate matrix - score remaining rows
       matrix_offset = current_row.size
-      if needle_len > 2
-        (1...(needle_len - 1)).each do |n|
+      if needle_len > 1
+        # Score rows for needle indices 1 through n-1
+        # Rust uses needle[1..] and row_offs[1..]
+        (1...needle_len).each do |n|
           row_off = row_offs[n]
-          next_row_off = row_offs[n + 1]
+          next_row_off = if n < needle_len - 1
+                           row_offs[n + 1]
+                         else
+                           haystack_len.to_u16 # Last row, next_row_off is end of haystack
+                         end
 
           score_row(
             current_row, matrix_cells, sliced_haystack, bonus,
             row_off, next_row_off, n.to_u16,
-            normalized_needle[n], normalized_needle[n + 1],
+            normalized_needle[n], normalized_needle[n + 1]? || normalized_needle[n],
             matrix_offset, compute_indices
           )
 
@@ -312,7 +317,7 @@ module Nucleoc
         current_prefix_bonus = current_prefix_bonus > PENALTY_GAP_EXTENSION ? current_prefix_bonus - PENALTY_GAP_EXTENSION : 0_u16
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched)
+          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_idx += 1
         end
 
@@ -351,7 +356,7 @@ module Nucleoc
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched)
+          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_idx += 1
         end
 
@@ -396,7 +401,7 @@ module Nucleoc
                  end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched)
+          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_idx += 1
         end
 
@@ -428,7 +433,7 @@ module Nucleoc
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx].set(p_matched, m_cell.matched)
+          matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_idx += 1
         end
 
@@ -502,7 +507,7 @@ module Nucleoc
       relative_last_row_off = last_row_off.to_i + 1 - needle_len
 
       col = max_score_end.to_i
-      matched = current_row[col + relative_last_row_off].matched
+      matched = current_row[col + relative_last_row_off].matched?
 
       # Iterate through rows in reverse
       if needle_len > 1
@@ -672,7 +677,7 @@ module Nucleoc
       end
 
       # Add prefix bonus if configured
-      if @config.prefer_prefix
+      if @config.prefer_prefix?
         prefix_bonus = if start == 0
                          MAX_PREFIX_BONUS
                        else
@@ -892,7 +897,7 @@ module Nucleoc
     end
 
     private def normalize_input(str : String) : String
-      return str unless @config.normalize
+      return str unless @config.normalize?
       str.unicode_normalize(:nfc)
     end
   end

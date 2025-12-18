@@ -64,7 +64,7 @@ module Nucleoc
     getter kind : Kind
     getter payload : Array(String)?
     getter pattern : Pattern?
-    getter clear_snapshot : Bool
+    getter? clear_snapshot : Bool
     getter reply : CML::Chan(Status)?
 
     def self.add(item : String) : self
@@ -96,8 +96,8 @@ module Nucleoc
   end
 
   struct Status
-    getter changed : Bool
-    getter running : Bool
+    getter? changed : Bool
+    getter? running : Bool
 
     def initialize(@changed : Bool, @running : Bool)
     end
@@ -252,7 +252,7 @@ module Nucleoc
         @snapshot = nil
       when Command::Kind::Restart
         @items = [] of String
-        @snapshot = nil if cmd.clear_snapshot
+        @snapshot = nil if cmd.clear_snapshot?
       when Command::Kind::UpdatePattern
         @pattern = cmd.pattern.not_nil!
         @snapshot = nil

@@ -6,7 +6,7 @@ module Nucleoc
   struct ScoreCell
     property score : UInt16
     property consecutive_bonus : UInt8
-    property matched : Bool
+    property? matched : Bool
 
     def initialize(@score : UInt16, @consecutive_bonus : UInt8, @matched : Bool)
     end
