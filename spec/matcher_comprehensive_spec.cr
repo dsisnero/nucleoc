@@ -294,12 +294,12 @@ describe Nucleoc::Matcher do
 
       # Test 2: Exact match "hello" in "hello world"
       score2 = matcher.exact_match("hello world", "hello")
-      score2.should be_nil  # Not an exact match since "hello" != "hello world"
+      score2.should be_nil # Not an exact match since "hello" != "hello world"
 
       # Test 3: Fuzzy match "hello" in "hello world"
       score3 = matcher.fuzzy_match("hello world", "hello")
       score3.should_not be_nil
-      score3.try { |s| s.should be > 0 }
+      score3.try(&.should(be > 0))
     end
 
     # Port of: nucleo_rust/examples/test_rust_exact_whitespace.rs
@@ -320,7 +320,7 @@ describe Nucleoc::Matcher do
         if haystack == "hello" && needle == "hello"
           score.should eq(140)
         else
-          score.should be_nil  # Not exact matches due to whitespace or extra text
+          score.should be_nil # Not exact matches due to whitespace or extra text
         end
       end
     end
@@ -342,47 +342,47 @@ describe Nucleoc::Matcher do
 
       fuzzy2 = matcher.fuzzy_match("hello world", "hello")
       fuzzy2.should_not be_nil
-      fuzzy2.try { |s| s.should be > 0 }
+      fuzzy2.try(&.should(be > 0))
 
       fuzzy3 = matcher.fuzzy_match("hello there world", "hello")
       fuzzy3.should_not be_nil
-      fuzzy3.try { |s| s.should be > 0 }
+      fuzzy3.try(&.should(be > 0))
 
       # Test with pattern "hell"
       fuzzy_hell1 = matcher.fuzzy_match("hello", "hell")
       fuzzy_hell1.should_not be_nil
-      fuzzy_hell1.try { |s| s.should be > 0 }
+      fuzzy_hell1.try(&.should(be > 0))
 
       fuzzy_hell2 = matcher.fuzzy_match("hello world", "hell")
       fuzzy_hell2.should_not be_nil
-      fuzzy_hell2.try { |s| s.should be > 0 }
+      fuzzy_hell2.try(&.should(be > 0))
 
       fuzzy_hell3 = matcher.fuzzy_match("hell", "hell")
-      fuzzy_hell3.should_not be_nil  # Should match, exact score depends on bonuses
+      fuzzy_hell3.should_not be_nil # Should match, exact score depends on bonuses
 
       fuzzy_hell4 = matcher.fuzzy_match("shell", "hell")
       fuzzy_hell4.should_not be_nil
-      fuzzy_hell4.try { |s| s.should be > 0 }
+      fuzzy_hell4.try(&.should(be > 0))
 
       # Test with pattern "world"
       fuzzy_world1 = matcher.fuzzy_match("hello world", "world")
       fuzzy_world1.should_not be_nil
-      fuzzy_world1.try { |s| s.should be > 0 }
+      fuzzy_world1.try(&.should(be > 0))
 
       fuzzy_world2 = matcher.fuzzy_match("world", "world")
-      fuzzy_world2.should eq(140)  # 5 chars * 28 = 140
+      fuzzy_world2.should eq(140) # 5 chars * 28 = 140
 
       fuzzy_world3 = matcher.fuzzy_match("world hello", "world")
       fuzzy_world3.should_not be_nil
-      fuzzy_world3.try { |s| s.should be > 0 }
+      fuzzy_world3.try(&.should(be > 0))
 
       fuzzy_world4 = matcher.fuzzy_match("wor ld", "world")
-      fuzzy_world4.should_not be_nil  # Fuzzy match can skip spaces
-      fuzzy_world4.try { |s| s.should be > 0 }
+      fuzzy_world4.should_not be_nil # Fuzzy match can skip spaces
+      fuzzy_world4.try(&.should(be > 0))
 
       # Test with pattern "he"
       fuzzy_he1 = matcher.fuzzy_match("hello", "he")
-      fuzzy_he1.should eq(62)  # 2 chars with bonus
+      fuzzy_he1.should eq(62) # 2 chars with bonus
 
       fuzzy_he2 = matcher.fuzzy_match("hello world", "he")
       fuzzy_he2.should eq(62)
