@@ -232,6 +232,27 @@ module Nucleoc
       # Normalize needle chars
       normalized_needle = needle_chars.map { |c| Chars.normalize(c, @config) }
 
+      # Compute compressed matrix row offsets (Rust uses sliding slice, we precompute)
+      # For each row i (0 <= i < needle_len - 1), matrix cells needed = haystack_len - 1 - row_offs[i]
+      # Last row (needle_len - 1) doesn't need matrix cells for reconstruction
+      matrix_row_offsets = Array(Int32).new(needle_len, 0)
+      cumulative = 0
+      (0...needle_len - 1).each do |i|
+        matrix_row_offsets[i] = cumulative
+        cumulative += haystack_len - 1 - row_offs[i].to_i
+      end
+      matrix_row_offsets[needle_len - 1] = cumulative # Not used but for completeness
+
+      if debug
+        puts "Compressed matrix layout:"
+        puts "  Total cells needed: #{cumulative}"
+        puts "  Rectangular cells: #{(haystack_len + 1 - needle_len) * needle_len}"
+        puts "  Row offsets: #{matrix_row_offsets}"
+        (0...needle_len - 1).each do |i|
+          puts "  Row #{i}: offset=#{matrix_row_offsets[i]}, length=#{haystack_len - 1 - row_offs[i].to_i}"
+        end
+      end
+
       # Calculate prefix bonus for prefer_prefix mode
       prefix_bonus = if @config.prefer_prefix?
                        if start == 0
@@ -254,7 +275,6 @@ module Nucleoc
       )
 
       # Populate matrix - score remaining rows
-      matrix_offset = current_row.size
       if needle_len > 1
         # Score rows for needle indices 1 through n-1
         # Rust uses needle[1..] and row_offs[1..]
@@ -270,10 +290,8 @@ module Nucleoc
             current_row, matrix_cells, sliced_haystack, bonus,
             row_off, next_row_off, n.to_u16,
             normalized_needle[n], normalized_needle[n + 1]? || normalized_needle[n],
-            matrix_offset, compute_indices
+            matrix_row_offsets[n], compute_indices
           )
-
-          matrix_offset += current_row.size + n - row_off.to_i
         end
       end
 
@@ -318,7 +336,7 @@ module Nucleoc
 
       # Reconstruct path if indices needed
       if compute_indices
-        reconstruct_optimal_path(matrix_cells, current_row, row_offs, best_end.to_u16, indices, start.to_u32, matrix_offset)
+        reconstruct_optimal_path(matrix_cells, current_row, row_offs, best_end.to_u16, indices, start.to_u32, matrix_row_offsets[needle_len - 1])
       end
 
       best_score
@@ -336,8 +354,9 @@ module Nucleoc
       next_needle_char : Char,
       prefix_bonus : UInt16,
       compute_indices : Bool,
+      matrix_offset : Int32 = 0,
     )
-      debug = haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b'
+      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c')
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
@@ -356,7 +375,7 @@ module Nucleoc
 
       # First loop: skipped columns (row_off to next_row_off-1)
       # In Rust, this iterates over current_row[relative_row_off..next_relative_row_off]
-      matrix_idx = 0
+      matrix_idx = matrix_offset
       (row_off.to_i...adj_next_row_off.to_i).each do |i|
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
 
@@ -377,8 +396,8 @@ module Nucleoc
           if debug
             puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
-          matrix_idx += 1
         end
+        matrix_idx += 1
 
         prev_p_score = p_score
         prev_m_score = m_cell.score
@@ -431,8 +450,8 @@ module Nucleoc
           if debug
             puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
-          matrix_idx += 1
         end
+        matrix_idx += 1
 
         prev_p_score = p_score
         prev_m_score = m_cell.score
@@ -454,7 +473,7 @@ module Nucleoc
       compute_indices : Bool,
     )
       # DEBUG
-      debug = haystack.size == 5 && needle_char == 'b' # Our test case
+      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h')
       if debug
         puts "=== DEBUG score_row ==="
         puts "compute_indices: #{compute_indices}"
@@ -491,8 +510,8 @@ module Nucleoc
           if debug
             puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
-          matrix_idx += 1
         end
+        matrix_idx += 1
 
         prev_p_score = p_score
         prev_m_score = m_cell.score
@@ -538,8 +557,8 @@ module Nucleoc
           if debug
             puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
           end
-          matrix_idx += 1
         end
+        matrix_idx += 1
 
         prev_p_score = p_score
         prev_m_score = m_cell.score

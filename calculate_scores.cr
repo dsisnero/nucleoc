@@ -1,16 +1,16 @@
 # Script to calculate expected scores from Rust tests
 
 # Rust constants
-SCORE_MATCH = 16
-PENALTY_GAP_START = 3
-PENALTY_GAP_EXTENSION = 1
-BONUS_BOUNDARY = SCORE_MATCH // 2  # 8
-BONUS_CAMEL123 = BONUS_BOUNDARY - PENALTY_GAP_START  # 5
-BONUS_CONSECUTIVE = PENALTY_GAP_START + PENALTY_GAP_EXTENSION  # 4
+SCORE_MATCH                 = 16
+PENALTY_GAP_START           =  3
+PENALTY_GAP_EXTENSION       =  1
+BONUS_BOUNDARY              = SCORE_MATCH // 2                          # 8
+BONUS_CAMEL123              = BONUS_BOUNDARY - PENALTY_GAP_START        # 5
+BONUS_CONSECUTIVE           = PENALTY_GAP_START + PENALTY_GAP_EXTENSION # 4
 BONUS_FIRST_CHAR_MULTIPLIER = 2
-BONUS_NON_WORD = BONUS_BOUNDARY  # 8
-BONUS_BOUNDARY_WHITE = BONUS_BOUNDARY  # Assuming same
-BONUS_BOUNDARY_DELIMITER = BONUS_BOUNDARY  # Assuming same
+BONUS_NON_WORD              = BONUS_BOUNDARY # 8
+BONUS_BOUNDARY_WHITE        = BONUS_BOUNDARY # Assuming same
+BONUS_BOUNDARY_DELIMITER    = BONUS_BOUNDARY # Assuming same
 
 def calculate_score(base_score, needle_len)
   base_score + (needle_len * SCORE_MATCH)
@@ -85,7 +85,7 @@ score1 = matcher_cs.fuzzy_indices("fooBarbaz1", "oBr", indices)
 puts "1. 'oBr' fuzzy (case sensitive): #{score1}"
 indices.clear
 
-# Test "Bar" substring case sensitive  
+# Test "Bar" substring case sensitive
 score2 = matcher_cs.substring_indices("fooBarbaz1", "Bar", indices)
 puts "2. 'Bar' substring (case sensitive): #{score2}"
 indices.clear
