@@ -139,7 +139,7 @@ describe Nucleoc::Matcher do
       # Substring match
       score = matcher.substring_match("hello world", "world")
       score.should_not be_nil
-      score.try { |value| value.should be > 0 }
+      score.try(&.should(be > 0))
 
       indices = [] of UInt32
       score_with_indices = matcher.substring_indices("hello world", "world", indices)
@@ -158,7 +158,7 @@ describe Nucleoc::Matcher do
       # Prefix match
       score = matcher.prefix_match("hello world", "hello")
       score.should_not be_nil
-      score.try { |value| value.should be > 0 }
+      score.try(&.should(be > 0))
 
       indices = [] of UInt32
       score_with_indices = matcher.prefix_indices("hello world", "hello", indices)
@@ -177,7 +177,7 @@ describe Nucleoc::Matcher do
       # Postfix match
       score = matcher.postfix_match("hello world", "world")
       score.should_not be_nil
-      score.try { |value| value.should be > 0 }
+      score.try(&.should(be > 0))
 
       indices = [] of UInt32
       score_with_indices = matcher.postfix_indices("hello world", "world", indices)
@@ -220,12 +220,12 @@ describe Nucleoc::Matcher do
       # Unicode exact match
       score = matcher.exact_match("café", "café")
       score.should_not be_nil
-      score.try { |value| value.should be > 0 }
+      score.try(&.should(be > 0))
 
       # Unicode fuzzy match
       score = matcher.fuzzy_match("café au lait", "café")
       score.should_not be_nil
-      score.try { |value| value.should be > 0 }
+      score.try(&.should(be > 0))
     end
   end
 

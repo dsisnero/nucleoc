@@ -1,6 +1,6 @@
 require "./spec_helper"
 require "../src/nucleoc"
-require "./test_helpers"
+require "./test_helpers_spec"
 
 # Import helper constants for readability
 include Nucleoc::TestHelpers

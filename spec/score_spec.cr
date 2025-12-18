@@ -12,7 +12,7 @@ describe "Score tests" do
       # Test with fuzzy_match
       result = matcher.fuzzy_match(haystack, pattern)
       result.should_not be_nil
-      result.try { |score| score.should be > 0 }
+      result.try(&.should(be > 0))
 
       puts "Pattern: '#{pattern}'"
       puts "Haystack: '#{haystack}'"
