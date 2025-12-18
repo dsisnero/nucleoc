@@ -147,13 +147,14 @@ module Nucleoc
 
     # Internal optimal matching implementation - matches Rust fuzzy_match_optimal
     private def fuzzy_match_optimal(haystack : String, needle : String, start : Int32, greedy_end : Int32, end_idx : Int32, indices : Array(UInt32), compute_indices : Bool) : UInt16?
-
       haystack_chars = haystack.chars
       needle_chars = needle.chars
       haystack_len = end_idx - start
       needle_len = needle_chars.size
 
       return if needle_len > haystack_len
+
+      debug = haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog"
 
       # Check if matrix would be too large - fall back to greedy
       cells = haystack_len * needle_len
@@ -172,6 +173,8 @@ module Nucleoc
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
       matrix_cells = Array(MatrixCell).new((haystack_len + 1 - needle_len) * needle_len) { MatrixCell.new }
 
+      debug = haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog"
+
       # Setup phase - normalize haystack and find first occurrence of each needle char
       prev_class = start > 0 ? Chars.char_class(haystack_chars[start - 1], @config) : @config.initial_char_class
 
@@ -179,8 +182,6 @@ module Nucleoc
       row_iter_idx = 0
       needle_char = Chars.normalize(needle_chars[0], @config)
       matched = false
-
-
 
       haystack_len.times do |i|
         # Normalize haystack char in place and get char class
@@ -195,7 +196,6 @@ module Nucleoc
 
         # Find first occurrence of each needle char
         if normalized_c == needle_char
-
           if row_iter_idx < needle_len - 1
             row_offs[row_iter_idx] = i.to_u16
             row_iter_idx += 1
