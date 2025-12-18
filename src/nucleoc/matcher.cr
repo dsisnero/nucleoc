@@ -154,7 +154,7 @@ module Nucleoc
 
       return if needle_len > haystack_len
 
-      debug = haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog"
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac")
 
       # Check if matrix would be too large - fall back to greedy
       cells = haystack_len * needle_len
@@ -173,7 +173,7 @@ module Nucleoc
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
       matrix_cells = Array(MatrixCell).new((haystack_len + 1 - needle_len) * needle_len) { MatrixCell.new }
 
-      debug = haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog"
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac")
 
       # Setup phase - normalize haystack and find first occurrence of each needle char
       prev_class = start > 0 ? Chars.char_class(haystack_chars[start - 1], @config) : @config.initial_char_class
@@ -356,7 +356,7 @@ module Nucleoc
       compute_indices : Bool,
       matrix_offset : Int32 = 0,
     )
-      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c')
+      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a')
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
@@ -473,7 +473,7 @@ module Nucleoc
       compute_indices : Bool,
     )
       # DEBUG
-      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h')
+      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c')
       if debug
         puts "=== DEBUG score_row ==="
         puts "compute_indices: #{compute_indices}"
@@ -533,12 +533,8 @@ module Nucleoc
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
 
-        # Not first row: get m_cell from current_row
-        m_cell = if relative_i >= 0 && relative_i < current_row.size
-                   current_row[relative_i]
-                 else
-                   ScoreCell::UNMATCHED
-                 end
+        # Not first row: get m_cell from current_row at row_idx (matches Rust's *score_cell)
+        m_cell = current_row[row_idx]
 
         # Update current_row for next_needle_char at position i+1
         if row_idx >= 0 && row_idx < current_row.size
@@ -623,10 +619,18 @@ module Nucleoc
       needle_len = row_offs.size
       needle_len.times { indices << 0_u32 }
 
+      width = current_row.size
+      debug = needle_len == 2 && width == 2
+      if debug
+        puts "=== RECONSTRUCT DEBUG ==="
+        puts "max_score_end: #{max_score_end}"
+        puts "row_offs: #{row_offs}"
+        puts "current_row: #{current_row.each_with_index.map { |cell, idx| "[#{idx}] score=#{cell.score} matched?=#{cell.matched?}" }.join(", ")}"
+      end
+
       last_row_off = row_offs[needle_len - 1]
       indices[indices_start + needle_len - 1] = start + max_score_end.to_u32 + last_row_off.to_u32
 
-      width = current_row.size
       relative_last_row_off = last_row_off.to_i + 1 - needle_len
 
       col = max_score_end.to_i
@@ -657,9 +661,9 @@ module Nucleoc
         row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        debug = needle_len == 3 && width == 3 # Our test case
+        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) # Our test case
         if debug
-          puts "=== DEBUG reconstruct_optimal_path ==="
+          puts "=== DEBUG reconstruct_optimal_path (Rust algorithm) ==="
           puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
           puts "row_offs: #{row_offs}, last_row_off: #{last_row_off}"
           puts "width: #{width}, matrix_len: #{matrix_len}"
@@ -680,7 +684,6 @@ module Nucleoc
 
           # Avoid out of bounds access
           if col < 0 || col >= row.size
-            # Still continue loop to handle state transitions
             break
           end
           next_matched = row[col].get(matched)
@@ -688,27 +691,19 @@ module Nucleoc
             puts "  row[#{col}].get(#{matched}) = #{next_matched}"
           end
 
-          if matched || next_matched
-            if matched
-              row_index += 1
-              if row_index < rows.size
-                row_idx, row_off, row = rows[row_index]
-                col += rows[row_index - 1][1].to_i - row_off.to_i # previous row_off - current row_off
-                if debug
-                  puts "  Move to next row #{row_idx}, col adjustment to #{col}"
-                end
-              else
-                break
-              end
+          if matched
+            row_index += 1
+            if row_index < rows.size
+              next_row_idx, next_row_off, next_row = rows[row_index]
+              col += row_off.to_i - next_row_off.to_i
+              row_idx, row_off, row = next_row_idx, next_row_off, next_row
+            else
+              break
             end
-            # If next_matched is true but matched is false, we found transition from gap to match
-            # Don't decrement col before moving to next row
-            col -= 1 unless next_matched && !matched
-            matched = next_matched
-          else
-            col -= 1
-            matched = next_matched
           end
+
+          col -= 1
+          matched = next_matched
         end
       end
     end
