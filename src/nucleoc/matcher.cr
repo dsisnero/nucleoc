@@ -47,7 +47,6 @@ module Nucleoc
     MAX_MATRIX_SIZE  = 100 * 1024 # 100KB
     MAX_HAYSTACK_LEN = 2048
     MAX_NEEDLE_LEN   =  128
-    DEBUG            = true
 
     @config : Config
 
@@ -148,11 +147,6 @@ module Nucleoc
 
     # Internal optimal matching implementation - matches Rust fuzzy_match_optimal
     private def fuzzy_match_optimal(haystack : String, needle : String, start : Int32, greedy_end : Int32, end_idx : Int32, indices : Array(UInt32), compute_indices : Bool) : UInt16?
-      # DEBUG
-      if haystack == "fooBarbaz1" && needle == "obr"
-        puts "=== DEBUG fuzzy_match_optimal: 'obr' in 'fooBarbaz1' ==="
-        puts "start: #{start}, end_idx: #{end_idx}, greedy_end: #{greedy_end}"
-      end
 
       haystack_chars = haystack.chars
       needle_chars = needle.chars
@@ -186,13 +180,7 @@ module Nucleoc
       needle_char = Chars.normalize(needle_chars[0], @config)
       matched = false
 
-      # DEBUG
-      debug = haystack == "fooBarbaz1" && needle == "obr"
-      if debug
-        puts "Looking for needle chars in setup phase:"
-        puts "Needle chars: #{needle_chars.map(&.inspect).join(' ')}"
-        puts "Normalized needle[0]: #{needle_char.inspect}"
-      end
+
 
       haystack_len.times do |i|
         # Normalize haystack char in place and get char class
@@ -207,9 +195,7 @@ module Nucleoc
 
         # Find first occurrence of each needle char
         if normalized_c == needle_char
-          if debug
-            puts "  Found #{needle_char.inspect} at position #{i} (row_iter_idx: #{row_iter_idx})"
-          end
+
           if row_iter_idx < needle_len - 1
             row_offs[row_iter_idx] = i.to_u16
             row_iter_idx += 1
