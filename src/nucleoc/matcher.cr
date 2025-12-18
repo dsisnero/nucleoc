@@ -146,6 +146,12 @@ module Nucleoc
 
     # Internal optimal matching implementation - matches Rust fuzzy_match_optimal
     private def fuzzy_match_optimal(haystack : String, needle : String, start : Int32, greedy_end : Int32, end_idx : Int32, indices : Array(UInt32), compute_indices : Bool) : UInt16?
+      # DEBUG
+      if haystack == "fooBarbaz1" && needle == "obr"
+        puts "=== DEBUG fuzzy_match_optimal: 'obr' in 'fooBarbaz1' ==="
+        puts "start: #{start}, end_idx: #{end_idx}, greedy_end: #{greedy_end}"
+      end
+
       haystack_chars = haystack.chars
       needle_chars = needle.chars
       haystack_len = end_idx - start
@@ -178,27 +184,56 @@ module Nucleoc
       needle_char = Chars.normalize(needle_chars[0], @config)
       matched = false
 
+      # DEBUG
+      debug = haystack == "fooBarbaz1" && needle == "obr"
+      if debug
+        puts "Looking for needle chars in setup phase:"
+        puts "Needle chars: #{needle_chars.map(&.inspect).join(' ')}"
+        puts "Normalized needle[0]: #{needle_char.inspect}"
+      end
+
       haystack_len.times do |i|
         # Normalize haystack char in place and get char class
         c = sliced_haystack[i]
         char_class = Chars.char_class(c, @config)
-        sliced_haystack[i] = Chars.normalize(c, @config)
+        normalized_c = Chars.normalize(c, @config)
+        sliced_haystack[i] = normalized_c
 
         # Calculate bonus
         bonus[i] = bonus_for(prev_class, char_class).to_u8
         prev_class = char_class
 
         # Find first occurrence of each needle char
-        if sliced_haystack[i] == needle_char
+        if normalized_c == needle_char
+          if debug
+            puts "  Found #{needle_char.inspect} at position #{i} (row_iter_idx: #{row_iter_idx})"
+          end
           if row_iter_idx < needle_len - 1
             row_offs[row_iter_idx] = i.to_u16
             row_iter_idx += 1
             needle_char = Chars.normalize(needle_chars[row_iter_idx], @config)
+            if debug
+              puts "  Now looking for needle[#{row_iter_idx}]: #{needle_char.inspect}"
+            end
           elsif !matched
             row_offs[row_iter_idx] = i.to_u16
             matched = true
+            if debug
+              puts "  Found last needle char, matched = true"
+            end
+            if debug
+              puts "After score_row_first, current_row:"
+              current_row.each_with_index do |cell, idx|
+                puts "  [#{idx}] score=#{cell.score}, matched?=#{cell.matched?}, consecutive_bonus=#{cell.consecutive_bonus}"
+              end
+            end
           end
         end
+      end
+
+      if debug
+        puts "Setup complete: matched = #{matched}, row_offs = #{row_offs}"
+        puts "sliced_haystack (normalized): #{sliced_haystack.map(&.inspect).join(' ')}"
       end
 
       return unless matched
@@ -258,13 +293,27 @@ module Nucleoc
       last_row_off = row_offs[needle_len - 1]
       relative_last_row_off = last_row_off.to_i + 1 - needle_len
 
+      if debug
+        puts "Finding best score in last row:"
+        puts "last_row_off: #{last_row_off}, relative_last_row_off: #{relative_last_row_off}"
+        puts "current_row size: #{current_row.size}"
+        puts "current_row scores: #{current_row.map(&.score).join(", ")}"
+      end
+
       best_score = 0_u16
       best_end = 0
       (relative_last_row_off...current_row.size).each do |i|
         if current_row[i].score > best_score
           best_score = current_row[i].score
           best_end = i - relative_last_row_off
+          if debug
+            puts "  New best score: #{best_score} at i=#{i}, best_end=#{best_end}"
+          end
         end
+      end
+
+      if debug
+        puts "Best score found: #{best_score} at end position #{best_end}"
       end
 
       return if best_score == 0
@@ -290,9 +339,17 @@ module Nucleoc
       prefix_bonus : UInt16,
       compute_indices : Bool,
     )
+      debug = haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b'
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
+      if debug
+        puts "=== DEBUG score_row_first ==="
+        puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
+        puts "adj_next_row_off: #{adj_next_row_off}, relative_row_off: #{relative_row_off}, next_relative_row_off: #{next_relative_row_off}"
+        puts "current_row size: #{current_row.size}"
+        puts "prefix_bonus: #{prefix_bonus}"
+      end
 
       prev_p_score = 0_u16
       prev_m_score = 0_u16
@@ -327,12 +384,20 @@ module Nucleoc
 
       # Second loop: columns from next_row_off-1 to end, using windows of 2
       # In Rust: iterates haystack[adj_next_row_off..].windows(2) paired with current_row[next_relative_row_off..]
-      # The key insight: current_row index = next_relative_row_off + (i - adj_next_row_off)
-      (adj_next_row_off.to_i...(haystack.size - 1)).each do |i|
-        # In Rust, the current_row index starts at next_relative_row_off
-        row_idx = next_relative_row_off + (i - adj_next_row_off.to_i)
+      # Number of iterations = min(current_row[next_relative_row_off..].size, haystack[adj_next_row_off..].windows(2).size)
+      max_iter = haystack.size - 1 - adj_next_row_off.to_i
+      max_iter = 0 if max_iter < 0
+      slice_len = Math.min(current_row.size - next_relative_row_off, max_iter)
+      slice_len.times do |j|
+        i = adj_next_row_off.to_i + j
+        row_idx = next_relative_row_off + j
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
+        if debug
+          puts "  j=#{j}, i=#{i}, row_idx=#{row_idx}, p_score=#{p_score}, prev_m_score=#{prev_m_score}"
+          puts "  haystack[i]=#{haystack[i].inspect}, needle_char=#{needle_char.inspect}, match=#{haystack[i] == needle_char}"
+          puts "  bonus[i]=#{bonus[i]}, current_prefix_bonus=#{current_prefix_bonus}"
+        end
 
         # First row: calculate m_cell for position i
         m_cell = if haystack[i] == needle_char
@@ -353,6 +418,10 @@ module Nucleoc
                                  else
                                    ScoreCell::UNMATCHED
                                  end
+          if debug
+            puts "  haystack[i+1]=#{haystack[i + 1].inspect}, next_needle_char=#{next_needle_char.inspect}, match=#{haystack[i + 1] == next_needle_char}"
+            puts "  Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})"
+          end
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
@@ -379,6 +448,14 @@ module Nucleoc
       matrix_offset : Int32,
       compute_indices : Bool,
     )
+      # DEBUG
+      debug = haystack.size == 5 && needle_char == 'b' # Our test case
+      if debug
+        puts "=== DEBUG score_row ==="
+        puts "needle_idx: #{needle_idx}, needle_char: #{needle_char.inspect}, next_needle_char: #{next_needle_char.inspect}"
+        puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
+        puts "matrix_offset: #{matrix_offset}"
+      end
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i - needle_idx.to_i
       next_relative_row_off = adj_next_row_off.to_i - needle_idx.to_i
@@ -410,9 +487,15 @@ module Nucleoc
       end
 
       # Second loop: columns from next_row_off-1 to end
-      (adj_next_row_off.to_i...(haystack.size - 1)).each do |i|
+      # In Rust: iterates haystack[adj_next_row_off..].windows(2) paired with current_row[next_relative_row_off..]
+      # Number of iterations = min(current_row[next_relative_row_off..].size, haystack[adj_next_row_off..].windows(2).size)
+      max_iter = haystack.size - 1 - adj_next_row_off.to_i
+      max_iter = 0 if max_iter < 0
+      slice_len = Math.min(current_row.size - next_relative_row_off, max_iter)
+      slice_len.times do |j|
+        i = adj_next_row_off.to_i + j
         relative_i = i - relative_row_off
-        row_idx = i - adj_next_row_off.to_i
+        row_idx = next_relative_row_off + j
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
 
