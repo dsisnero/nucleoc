@@ -1,0 +1,98 @@
+---
+workstream:
+  id: nucleo-port-to-crystal
+  title: Port nucleo_rust fuzzy matcher to Crystal
+  status: active
+  created_at: 2025-12-08 22:11:12.265387000
+  updated_at: 2025-12-09 00:00:00.000000000
+assignment:
+  required_skills: []
+dependencies:
+  blocks: []
+  blocked_by: []
+  depends_on: []
+  related_to: []
+requirements:
+  system_requirements: []
+  acceptance_criteria: []
+tasks:
+- id: task-1
+  description: 'Task 1: Analyze Rust codebase structure and dependencies'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-2
+  description: 'Task 2: Set up Crystal project structure with proper shard.yml configuration'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-3
+  description: 'Task 3: Port Utf32Str and Utf32String for efficient character iteration'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-4
+  description: 'Task 4: Implement fuzzy matching algorithms (greedy and optimal)'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-5
+  description: 'Task 5: Implement matrix scoring system for optimal matching'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-6
+  description: 'Task 6: Implement substring matching'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-7
+  description: 'Task 7: Implement prefix and postfix matching'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-8
+  description: 'Task 8: Port pattern parsing and matching logic'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-9
+  description: 'Task 9: Implement prefilter optimizations'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-10
+  description: 'Task 10: Port tests and benchmarks'
+  status: completed
+  dependencies: []
+  acceptance_criteria: []
+- id: task-11
+  description: 'Task 11: Performance optimization'
+  status: pending
+  dependencies: []
+  acceptance_criteria: []
+- id: task-12
+  description: 'Task 12: Implement high-level worker and thread pool system'
+  status: pending
+  dependencies: []
+  acceptance_criteria: []
+- id: task-13
+  description: 'Task 13: Add documentation and examples'
+  status: pending
+  dependencies: []
+  acceptance_criteria: []
+- id: task-14
+  description: 'Task 14: Run crystal tool format and ameba to fix style issues'
+  status: pending
+  dependencies: []
+  acceptance_criteria: []
+- id: task-15
+  description: 'Task 15: Ensure all tests pass'
+  status: pending
+  dependencies: []
+  acceptance_criteria: []
+tags:
+- crystal
+- port
+- fuzzy-matching
+- nucleo

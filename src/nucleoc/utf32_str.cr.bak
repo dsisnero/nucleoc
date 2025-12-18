@@ -1,0 +1,190 @@
+# UTF-32 encoded string types for nucleoc fuzzy matching
+module Nucleoc
+  # A UTF-32 encoded (char array) string that is used as an input to (fuzzy) matching.
+  #
+  # This is mostly intended as an internal string type, but some methods are exposed for
+  # convenience.
+  #
+  # ## Design rationale
+  # Usually Crystal's UTF-8 encoded strings are great. However, since fuzzy matching
+  # operates on codepoints (ideally, it should operate on graphemes but that's too
+  # much hassle to deal with), we want to quickly iterate over codepoints (up to 5
+  # times) during matching.
+  #
+  # Doing codepoint segmentation on the fly not only blows trough the cache
+  # (lookup tables and I-cache) but also has nontrivial runtime compared to the
+  # matching itself. Furthermore there are many extra optimizations available
+  # for ASCII only text, but checking each match has too much overhead.
+  #
+  # Of course, this comes at extra memory cost as we usually still need the UTF-8
+  # encoded variant for rendering. In the (dominant) case of ASCII-only text
+  # we don't require a copy. Furthermore fuzzy matching usually is applied while
+  # the user is typing on the fly so the same item is potentially matched many
+  # times (making the the up-front cost more worth it). That means that its
+  # basically always worth it to pre-segment the string.
+  alias Utf32Str = Utf32StrAscii | Utf32StrUnicode
+
+  # ASCII variant of Utf32Str
+  struct Utf32StrAscii
+    getter bytes : Slice(UInt8)
+
+    def initialize(@bytes : Slice(UInt8))
+    end
+
+    def initialize(str : String)
+      @bytes = str.to_slice
+    end
+
+    # Returns the number of characters in this string.
+    def size : Int32
+      @bytes.size
+    end
+
+    # Returns whether this string is empty.
+    def empty? : Bool
+      @bytes.empty?
+    end
+
+    # Creates a slice with a string that contains the characters in
+    # the specified **character range**.
+    def [](range : Range) : Utf32StrAscii
+      Utf32StrAscii.new(@bytes[range])
+    end
+
+    # Returns the character at the given index
+    def [](index : Int) : Char
+      @bytes[index].chr
+    end
+
+    # Returns an iterator over characters
+    def each_char(&block : Char ->)
+      @bytes.each do |byte|
+        yield byte.chr
+      end
+    end
+
+    def to_s(io : IO) : Nil
+      @bytes.each do |byte|
+        io << byte.chr
+      end
+    end
+  end
+
+  # Unicode variant of Utf32Str
+  struct Utf32StrUnicode
+    getter chars : Slice(Char)
+
+    def initialize(@chars : Slice(Char))
+    end
+
+    def initialize(str : String)
+      @chars = Chars.graphemes(str).to_unsafe.to_slice(str.size)
+    end
+
+    # Returns the number of characters in this string.
+    def size : Int32
+      @chars.size
+    end
+
+    # Returns whether this string is empty.
+    def empty? : Bool
+      @chars.empty?
+    end
+
+    # Creates a slice with a string that contains the characters in
+    # the specified **character range**.
+    def [](range : Range) : Utf32StrUnicode
+      Utf32StrUnicode.new(@chars[range])
+    end
+
+    # Returns the character at the given index
+    def [](index : Int) : Char
+      @chars[index]
+    end
+
+    # Returns an iterator over characters
+    def each_char(&block : Char ->)
+      @chars.each do |char|
+        yield char
+      end
+    end
+
+    def to_s(io : IO) : Nil
+      @chars.each do |char|
+        io << char
+      end
+    end
+  end
+
+  # Check if a given string can be represented internally as ASCII
+  private def self.has_ascii_graphemes(string : String) : Bool
+    string.ascii_only?     string.ascii_only? string.ascii_only? && !string.includes?("\\r\\n")string.ascii_only? && !string.includes?("\\r\\n") !string.includes?("\r\n")    string.ascii_only? string.ascii_only? && !string.includes?("\\r\\n")string.ascii_only? && !string.includes?("\\r\\n") !string.includes?("\r\n") !string.includes?("\r\n")
+  end
+
+  # Convenience method to construct a Utf32Str from a normal UTF-8 str
+  def self.utf32_str(str : String, buf : Pointer(Array(Char))) : Utf32Str
+    if has_ascii_graphemes(str)
+      Utf32StrAscii.new(str)
+    else
+      buf.value.clear
+      buf.value.concat(Chars.graphemes(str))
+      Utf32StrUnicode.new(buf.value.to_unsafe.to_slice(buf.value.size))
+    end
+  end
+
+  # An owned version of Utf32Str
+  alias Utf32String = Utf32StringAscii | Utf32StringUnicode
+
+  # ASCII variant of Utf32String
+  class Utf32StringAscii
+    getter string : String
+
+    def initialize(@string : String)
+    end
+
+    def size : Int32
+      @string.size
+    end
+
+    def empty? : Bool
+      @string.empty?
+    end
+
+    def slice(range : Range) : Utf32StrAscii
+      Utf32StrAscii.new(@string[range])
+    end
+
+    def to_s(io : IO) : Nil
+      io << @string
+    end
+  end
+
+  # Unicode variant of Utf32String
+  class Utf32StringUnicode
+    getter chars : Array(Char)
+
+    def initialize(@chars : Array(Char))
+    end
+
+    def initialize(str : String)
+      @chars = Chars.graphemes(str)
+    end
+
+    def size : Int32
+      @chars.size
+    end
+
+    def empty? : Bool
+    end
+
+    def slice(range : Range) : Utf32StrUnicode
+      Utf32StrUnicode.new(@chars[range].to_unsafe.to_slice(range.size))
+    end
+
+    def to_s(io : IO) : Nil
+      @chars.each do |char|
+        io << char
+      end
+    end
+  end
+end

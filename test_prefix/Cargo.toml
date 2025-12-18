@@ -1,0 +1,7 @@
+[package]
+name = "test_prefix"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nucleo-matcher = { path = "../nucleo_rust/matcher" }

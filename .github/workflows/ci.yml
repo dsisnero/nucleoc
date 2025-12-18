@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        crystal-version: ['1.18.2', 'latest']
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: ${{ matrix.crystal-version }}
+    
+    - name: Install dependencies
+      run: shards install
+    
+    - name: Check formatting
+      run: crystal tool format --check src/ spec/
+    
+    - name: Run Ameba linter
+      run: ameba
+    
+    - name: Run tests
+      run: crystal spec
+    
+    - name: Build library
+      run: crystal build src/nucleoc.cr
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Crystal
+      uses: crystal-lang/install-crystal@v1
+      with:
+        crystal: latest
+    
+    - name: Install dependencies
+      run: shards install
+    
+    - name: Check for unused dependencies
+      run: |
+        shards prune
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "Unused dependencies found. Run 'shards prune' locally."
+          exit 1
+        fi

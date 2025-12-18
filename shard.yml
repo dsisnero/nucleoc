@@ -1,0 +1,21 @@
+name: nucleoc
+version: 0.1.0
+
+authors:
+  - Dominic Sisneros <dsisnero@gmail.com>
+
+crystal: ">= 1.18.2"
+
+license: MIT
+
+targets:
+  nucleoc:
+    main: src/nucleoc.cr
+
+dependencies:
+  cml:
+    github: dsisnero/cml
+
+development_dependencies:
+  ameba:
+    github: crystal-ameba/ameba

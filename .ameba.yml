@@ -1,0 +1,28 @@
+# Ameba configuration for Nucleoc
+
+# Enable/disable rules
+AllCops:
+  Enabled: true
+
+# Customize specific rules
+Style/RedundantBegin:
+  Enabled: false
+
+Style/UnlessElse:
+  Enabled: false
+
+Performance/Size:
+  Enabled: false
+
+Lint/UnusedArgument:
+  Enabled: false
+
+# Exclude files/directories
+exclude:
+  - lib/
+  - spec/fixtures/
+  - examples/
+  - test_*.cr
+  - debug_*.cr
+  - calculate_scores.cr
+  - run_test.cr
