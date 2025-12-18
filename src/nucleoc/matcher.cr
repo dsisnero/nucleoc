@@ -154,7 +154,7 @@ module Nucleoc
 
       return if needle_len > haystack_len
 
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello")
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello") || (haystack == "fooBarbaz1" && needle == "obr") || (haystack == "ab0123 456" && needle == "12356") || (haystack == "foo/bar/baz" && needle == "fbb")
 
       # Check if matrix would be too large - fall back to greedy
       cells = haystack_len * needle_len
@@ -173,7 +173,7 @@ module Nucleoc
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
       matrix_cells = Array(MatrixCell).new((haystack_len + 1 - needle_len) * needle_len) { MatrixCell.new }
 
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello")
+      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello") || (haystack == "fooBarbaz1" && needle == "obr") || (haystack == "ab0123 456" && needle == "12356") || (haystack == "foo/bar/baz" && needle == "fbb")
 
       # Setup phase - normalize haystack and find first occurrence of each needle char
       prev_class = start > 0 ? Chars.char_class(haystack_chars[start - 1], @config) : @config.initial_char_class
@@ -620,7 +620,7 @@ module Nucleoc
       needle_len.times { indices << 0_u32 }
 
       width = current_row.size
-      debug = needle_len == 2 && width == 2
+      debug = (needle_len == 2 && width == 2) || (needle_len == 3 && width == 3) || (needle_len == 5 && width == 4) || (needle_len == 9 && width == 6)
       if debug
         puts "=== RECONSTRUCT DEBUG ==="
         puts "max_score_end: #{max_score_end}"
@@ -661,7 +661,7 @@ module Nucleoc
         row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) || (needle_len == 5 && width == 4) # Our test cases
+        debug = (needle_len == 3 && width == 3) || (needle_len == 2 && width == 2) || (needle_len == 5 && width == 4) || (needle_len == 9 && width == 6) # Our test cases
         if debug
           puts "=== DEBUG reconstruct_optimal_path (Rust algorithm) ==="
           puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
