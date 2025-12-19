@@ -50,6 +50,12 @@ module Nucleoc
 
     @config : Config
 
+    # Global toggle for verbose optimal-matcher debugging.
+    # Enable by setting NUCELOC_DEBUG_OPTIMAL=1 in the environment.
+    def self.debug_optimal?
+      ENV["NUCLEOC_DEBUG_OPTIMAL"]? == "1"
+    end
+
     def initialize(@config : Config = Config::DEFAULT)
     end
 
@@ -79,6 +85,13 @@ module Nucleoc
     end
 
     private def fuzzy_match_impl(haystack : String, needle : String, indices : Array(UInt32), compute_indices : Bool) : UInt16?
+      # Special-case single-character needles using greedy substring behavior
+      # This mirrors Rust's substring_match_1_* functions and keeps tests that
+      # expect greedy behavior for single chars (like "foO"/"o") passing.
+      if needle.size == 1
+        return substring_match_1(haystack, needle, indices, compute_indices)
+      end
+
       # Prefilter to find match bounds (like Rust)
       prefilter_result = prefilter(haystack, needle)
       return unless prefilter_result
@@ -143,6 +156,43 @@ module Nucleoc
       end
 
       {start, greedy_end, end_idx}
+    end
+
+    # Greedy single-character substring match used when needle.size == 1.
+    # Returns the score for the first matching position (greedy behavior) and
+    # optionally records indices when compute_indices is true.
+    private def substring_match_1(haystack : String, needle : String, indices : Array(UInt32), compute_indices : Bool) : UInt16?
+      haystack_chars = haystack.chars
+      needle_char = needle.chars[0]
+      normalized_needle = Chars.normalize(needle_char, @config)
+
+      best_pos = nil.as(Int32?)
+
+      # prev_class tracks the previous character's class for bonus calculation.
+      prev_class = @config.initial_char_class
+
+      haystack_chars.each_with_index do |c, i|
+        normalized_c = Chars.normalize(c, @config)
+        char_class = Chars.char_class(c, @config)
+
+        if normalized_c == normalized_needle
+          bonus = @config.bonus_for(prev_class, char_class)
+          score = bonus * BONUS_FIRST_CHAR_MULTIPLIER + SCORE_MATCH
+
+          best_pos = i
+
+          if compute_indices
+            indices << i.to_u32
+          end
+
+          return score
+        end
+
+        prev_class = char_class
+      end
+
+      # No match found
+      nil
     end
 
     # Internal optimal matching implementation - matches Rust fuzzy_match_optimal
@@ -366,7 +416,7 @@ module Nucleoc
       compute_indices : Bool,
       matrix_offset : Int32 = 0,
     )
-      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a') || (haystack.size == 7 && needle_char == '1')
+      debug = Matcher.debug_optimal? && ((haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a') || (haystack.size == 7 && needle_char == '1'))
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
@@ -485,7 +535,7 @@ module Nucleoc
       compute_indices : Bool,
     )
       # DEBUG
-      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c') || (haystack.size == 7 && needle_char.in?(['2', '3', '5', '6']))
+      debug = Matcher.debug_optimal? && ((haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c') || (haystack.size == 7 && needle_char.in?(['2', '3', '5', '6'])))
       if debug
         puts "=== DEBUG score_row ==="
         puts "compute_indices: #{compute_indices}"
@@ -501,21 +551,33 @@ module Nucleoc
       prev_m_score = 0_u16
 
       # First loop: columns from row_off to next_row_off-1
+      # This matches Rust's skipped_col_iter over
+      #   haystack[row_off..next_row_off]
+      #   bonus[row_off..next_row_off]
+      #   current_row[relative_row_off..next_relative_row_off]
       matrix_idx = matrix_offset
-      (row_off.to_i...adj_next_row_off.to_i).each do |i|
-        relative_i = i - relative_row_off
+      first_len = adj_next_row_off.to_i - row_off.to_i
+      first_len.times do |j|
+        i = row_off.to_i + j
+        row_idx = relative_row_off + j
         if debug
-          puts "    first loop i=#{i}, relative_i=#{relative_i}"
+          puts "    first loop j=#{j}, i=#{i}, row_idx=#{row_idx}"
         end
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
+        if debug
+          puts "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}"
+        end
 
-        # Not first row: get m_cell from current_row
-        m_cell = if relative_i >= 0 && relative_i < current_row.size
-                   current_row[relative_i]
+        # Not first row: get m_cell from current_row slice [relative_row_off..next_relative_row_off)
+        m_cell = if row_idx >= 0 && row_idx < current_row.size
+                   current_row[row_idx]
                  else
                    ScoreCell::UNMATCHED
                  end
+        if debug
+          puts "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}"
+        end
 
         if compute_indices && matrix_idx < matrix_cells.size
           cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
@@ -545,9 +607,15 @@ module Nucleoc
         end
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
+        if debug
+          puts "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}"
+        end
 
         # Not first row: get m_cell from current_row at row_idx (matches Rust's *score_cell)
         m_cell = current_row[row_idx]
+        if debug
+          puts "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}"
+        end
 
         # Update current_row for next_needle_char at position i+1
         if row_idx >= 0 && row_idx < current_row.size
@@ -634,7 +702,7 @@ module Nucleoc
       needle_len.times { indices << 0_u32 }
 
       width = current_row.size
-      debug = true
+      debug = Matcher.debug_optimal?
       if debug
         puts "=== RECONSTRUCT DEBUG ==="
         puts "max_score_end: #{max_score_end}"
