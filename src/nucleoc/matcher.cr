@@ -232,13 +232,16 @@ module Nucleoc
       normalized_needle = needle_chars.map { |c| Chars.normalize(c, @config) }
 
       # Compute compressed matrix row offsets (Rust uses sliding slice, we precompute)
-      # For each row i (0 <= i < needle_len - 1), matrix cells needed = haystack_len - 1 - row_offs[i]
+      # For each row i (0 <= i < needle_len - 1), matrix cells needed = width - (row_offs[i] - i)
+      # where width = haystack_len + 1 - needle_len = current_row.size
       # Last row (needle_len - 1) doesn't need matrix cells for reconstruction
       matrix_row_offsets = Array(Int32).new(needle_len, 0)
       cumulative = 0
+      width = current_row.size
       (0...needle_len - 1).each do |i|
         matrix_row_offsets[i] = cumulative
-        cumulative += haystack_len - 1 - row_offs[i].to_i
+        row_size = width - (row_offs[i].to_i - i)
+        cumulative += row_size
       end
       matrix_row_offsets[needle_len - 1] = cumulative # Not used but for completeness
 
@@ -363,7 +366,7 @@ module Nucleoc
       compute_indices : Bool,
       matrix_offset : Int32 = 0,
     )
-      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a')
+      debug = (haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a') || (haystack.size == 7 && needle_char == '1')
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
@@ -399,9 +402,10 @@ module Nucleoc
         current_prefix_bonus = current_prefix_bonus > PENALTY_GAP_EXTENSION ? current_prefix_bonus - PENALTY_GAP_EXTENSION : 0_u16
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = cell
           if debug
-            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
           end
         end
         matrix_idx += 1
@@ -453,9 +457,10 @@ module Nucleoc
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = cell
           if debug
-            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
           end
         end
         matrix_idx += 1
@@ -480,7 +485,7 @@ module Nucleoc
       compute_indices : Bool,
     )
       # DEBUG
-      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c')
+      debug = (haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c') || (haystack.size == 7 && needle_char.in?(['2', '3', '5', '6']))
       if debug
         puts "=== DEBUG score_row ==="
         puts "compute_indices: #{compute_indices}"
@@ -513,9 +518,10 @@ module Nucleoc
                  end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = cell
           if debug
-            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
           end
         end
         matrix_idx += 1
@@ -556,9 +562,10 @@ module Nucleoc
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
-          matrix_cells[matrix_idx] = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
+          matrix_cells[matrix_idx] = cell
           if debug
-            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}"
+            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
           end
         end
         matrix_idx += 1
@@ -658,7 +665,7 @@ module Nucleoc
 
         (0...(needle_len - 1)).to_a.reverse.each do |i|
           row_off = row_offs[i]
-          row_size = haystack_len - 1 - row_off.to_i
+          row_size = width - (row_off.to_i - i)
 
           if debug
             puts "  Row #{i}: row_off=#{row_off}, row_size=#{row_size}, remaining_cells.size=#{remaining_cells.size}"
