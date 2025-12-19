@@ -1,4 +1,6 @@
 # Matcher module for nucleoc fuzzy matching library
+require "log"
+
 module Nucleoc
   # Score cell for tracking matching state in optimal algorithm
   # Matches Rust's ScoreCell exactly
@@ -44,17 +46,13 @@ module Nucleoc
 
   # A matcher engine that can execute (fuzzy) matches.
   class Matcher
+    private LOGGER = ::Log.for(self)
+
     MAX_MATRIX_SIZE  = 100 * 1024 # 100KB
     MAX_HAYSTACK_LEN = 2048
     MAX_NEEDLE_LEN   =  128
 
     @config : Config
-
-    # Global toggle for verbose optimal-matcher debugging.
-    # Enable by setting NUCELOC_DEBUG_OPTIMAL=1 in the environment.
-    def self.debug_optimal?
-      ENV["NUCLEOC_DEBUG_OPTIMAL"]? == "1"
-    end
 
     def initialize(@config : Config = Config::DEFAULT)
     end
@@ -204,8 +202,6 @@ module Nucleoc
 
       return if needle_len > haystack_len
 
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello") || (haystack == "fooBarbaz1" && needle == "obr") || (haystack == "ab0123 456" && needle == "12356") || (haystack == "foo/bar/baz" && needle == "fbb")
-
       # Check if matrix would be too large - fall back to greedy
       cells = haystack_len * needle_len
       if cells > MAX_MATRIX_SIZE || haystack_len > MAX_HAYSTACK_LEN || needle_len > MAX_NEEDLE_LEN
@@ -221,8 +217,6 @@ module Nucleoc
       bonus = Array(UInt8).new(haystack_len, 0_u8)
       row_offs = Array(UInt16).new(needle_len, 0_u16)
       current_row = Array(ScoreCell).new(haystack_len + 1 - needle_len) { ScoreCell::UNMATCHED }
-
-      debug = (haystack == "/usr/share/doc/at/ChangeLog" && needle == "changelog") || (haystack == "abc" && needle == "ac") || (haystack == "hello world" && needle == "hello") || (haystack == "fooBarbaz1" && needle == "obr") || (haystack == "ab0123 456" && needle == "12356") || (haystack == "foo/bar/baz" && needle == "fbb")
 
       # Setup phase - normalize haystack and find first occurrence of each needle char
       prev_class = start > 0 ? Chars.char_class(haystack_chars[start - 1], @config) : @config.initial_char_class
@@ -249,29 +243,18 @@ module Nucleoc
             row_offs[row_iter_idx] = i.to_u16
             row_iter_idx += 1
             needle_char = Chars.normalize(needle_chars[row_iter_idx], @config)
-            if debug
-              puts "  Now looking for needle[#{row_iter_idx}]: #{needle_char.inspect}"
-            end
+            LOGGER.debug { "optimal: searching for needle[#{row_iter_idx}]: #{needle_char.inspect}" }
           elsif !matched
             row_offs[row_iter_idx] = i.to_u16
             matched = true
-            if debug
-              puts "  Found last needle char, matched = true"
-            end
-            if debug
-              puts "After score_row_first, current_row:"
-              current_row.each_with_index do |cell, idx|
-                puts "  [#{idx}] score=#{cell.score}, matched?=#{cell.matched?}, consecutive_bonus=#{cell.consecutive_bonus}"
-              end
-            end
+            LOGGER.debug { "optimal: found last needle char, matched = true" }
+            LOGGER.debug { "optimal: current_row after setup: #{current_row.each_with_index.map { |cell, idx| "[#{idx}] score=#{cell.score} matched=#{cell.matched?} bonus=#{cell.consecutive_bonus}" }.join(", ")}" }
           end
         end
       end
 
-      if debug
-        puts "Setup complete: matched = #{matched}, row_offs = #{row_offs}"
-        puts "sliced_haystack (normalized): #{sliced_haystack.map(&.inspect).join(' ')}"
-      end
+      LOGGER.debug { "optimal: setup matched=#{matched}, row_offs=#{row_offs}" }
+      LOGGER.debug { "optimal: sliced_haystack (normalized): #{sliced_haystack.map(&.inspect).join(' ')}" }
 
       return unless matched
 
@@ -302,14 +285,16 @@ module Nucleoc
                        Array(MatrixCell).new
                      end
 
-      if debug
-        puts "Compressed matrix layout:"
-        puts "  Total cells needed: #{cumulative}"
-        puts "  Rectangular cells: #{(haystack_len + 1 - needle_len) * needle_len}"
-        puts "  Matrix cells allocated: #{matrix_cells.size}"
-        puts "  Row offsets: #{matrix_row_offsets}"
-        (0...needle_len - 1).each do |i|
-          puts "  Row #{i}: offset=#{matrix_row_offsets[i]}, length=#{haystack_len - 1 - row_offs[i].to_i}"
+      LOGGER.debug do
+        String.build do |io|
+          io << "optimal: compressed matrix layout\n"
+          io << "  total cells needed: #{cumulative}\n"
+          io << "  rectangular cells: #{(haystack_len + 1 - needle_len) * needle_len}\n"
+          io << "  matrix cells allocated: #{matrix_cells.size}\n"
+          io << "  row offsets: #{matrix_row_offsets}\n"
+          (0...needle_len - 1).each do |i|
+            io << "  row #{i}: offset=#{matrix_row_offsets[i]}, length=#{haystack_len - 1 - row_offs[i].to_i}\n"
+          end
         end
       end
 
@@ -355,10 +340,12 @@ module Nucleoc
         end
       end
 
-      if debug
-        puts "Matrix cells after population (size #{matrix_cells.size}):"
-        matrix_cells.each_with_index do |cell, idx|
-          puts "  [#{idx}] data=#{cell.@data.to_s(2)} p=#{cell.get(false)} m=#{cell.get(true)}"
+      LOGGER.debug do
+        String.build do |io|
+          io << "optimal: matrix cells after population (size #{matrix_cells.size}):\n"
+          matrix_cells.each_with_index do |cell, idx|
+            io << "  [#{idx}] data=#{cell.@data.to_s(2)} p=#{cell.get(false)} m=#{cell.get(true)}\n"
+          end
         end
       end
 
@@ -366,13 +353,15 @@ module Nucleoc
       last_row_off = row_offs[needle_len - 1]
       relative_last_row_off = last_row_off.to_i + 1 - needle_len
 
-      if debug
-        puts "Finding best score in last row:"
-        puts "last_row_off: #{last_row_off}, relative_last_row_off: #{relative_last_row_off}"
-        puts "current_row size: #{current_row.size}"
-        puts "current_row cells:"
-        current_row.each_with_index do |cell, idx|
-          puts "  [#{idx}] score=#{cell.score}, matched?=#{cell.matched?}, consecutive_bonus=#{cell.consecutive_bonus}"
+      LOGGER.debug do
+        String.build do |io|
+          io << "optimal: finding best score in last row\n"
+          io << "last_row_off: #{last_row_off}, relative_last_row_off: #{relative_last_row_off}\n"
+          io << "current_row size: #{current_row.size}\n"
+          io << "current_row cells:\n"
+          current_row.each_with_index do |cell, idx|
+            io << "  [#{idx}] score=#{cell.score}, matched?=#{cell.matched?}, consecutive_bonus=#{cell.consecutive_bonus}\n"
+          end
         end
       end
 
@@ -382,15 +371,11 @@ module Nucleoc
         if current_row[i].score > best_score
           best_score = current_row[i].score
           best_end = i - relative_last_row_off
-          if debug
-            puts "  New best score: #{best_score} at i=#{i}, best_end=#{best_end}"
-          end
+          LOGGER.debug { "optimal: new best score #{best_score} at i=#{i}, best_end=#{best_end}" }
         end
       end
 
-      if debug
-        puts "Best score found: #{best_score} at end position #{best_end}"
-      end
+      LOGGER.debug { "optimal: best score #{best_score} at end position #{best_end}" }
 
       return if best_score == 0
 
@@ -416,17 +401,18 @@ module Nucleoc
       compute_indices : Bool,
       matrix_offset : Int32 = 0,
     )
-      debug = Matcher.debug_optimal? && ((haystack.size == 5 && needle_char == 'o' && next_needle_char == 'b') || (haystack.size == 14 && needle_char == 'c') || (haystack.size == 3 && needle_char == 'a') || (haystack.size == 7 && needle_char == '1'))
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i               # 0 for first row
       next_relative_row_off = adj_next_row_off.to_i # next_row_off - 1 for first row
-      if debug
-        puts "=== DEBUG score_row_first ==="
-        puts "compute_indices: #{compute_indices}"
-        puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
-        puts "adj_next_row_off: #{adj_next_row_off}, relative_row_off: #{relative_row_off}, next_relative_row_off: #{next_relative_row_off}"
-        puts "current_row size: #{current_row.size}"
-        puts "prefix_bonus: #{prefix_bonus}"
+      LOGGER.debug do
+        String.build do |io|
+          io << "optimal: score_row_first\n"
+          io << "compute_indices: #{compute_indices}\n"
+          io << "row_off: #{row_off}, next_row_off: #{next_row_off}\n"
+          io << "adj_next_row_off: #{adj_next_row_off}, relative_row_off: #{relative_row_off}, next_relative_row_off: #{next_relative_row_off}\n"
+          io << "current_row size: #{current_row.size}\n"
+          io << "prefix_bonus: #{prefix_bonus}"
+        end
       end
 
       prev_p_score = 0_u16
@@ -454,9 +440,7 @@ module Nucleoc
         if compute_indices && matrix_idx < matrix_cells.size
           cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_cells[matrix_idx] = cell
-          if debug
-            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
-          end
+          LOGGER.debug { "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}" }
         end
         matrix_idx += 1
 
@@ -475,10 +459,12 @@ module Nucleoc
         row_idx = next_relative_row_off + j
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
-        if debug
-          puts "  j=#{j}, i=#{i}, row_idx=#{row_idx}, p_score=#{p_score}, prev_m_score=#{prev_m_score}"
-          puts "  haystack[i]=#{haystack[i].inspect}, needle_char=#{needle_char.inspect}, match=#{haystack[i] == needle_char}"
-          puts "  bonus[i]=#{bonus[i]}, current_prefix_bonus=#{current_prefix_bonus}"
+        LOGGER.debug do
+          String.build do |io|
+            io << "  j=#{j}, i=#{i}, row_idx=#{row_idx}, p_score=#{p_score}, prev_m_score=#{prev_m_score}\n"
+            io << "  haystack[i]=#{haystack[i].inspect}, needle_char=#{needle_char.inspect}, match=#{haystack[i] == needle_char}\n"
+            io << "  bonus[i]=#{bonus[i]}, current_prefix_bonus=#{current_prefix_bonus}"
+          end
         end
 
         # First row: calculate m_cell for position i
@@ -500,18 +486,18 @@ module Nucleoc
                                  else
                                    ScoreCell::UNMATCHED
                                  end
-          if debug
-            puts "  haystack[i+1]=#{haystack[i + 1].inspect}, next_needle_char=#{next_needle_char.inspect}, match=#{haystack[i + 1] == next_needle_char}"
-            puts "  Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})"
+          LOGGER.debug do
+            String.build do |io|
+              io << "  haystack[i+1]=#{haystack[i + 1].inspect}, next_needle_char=#{next_needle_char.inspect}, match=#{haystack[i + 1] == next_needle_char}\n"
+              io << "  Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})"
+            end
           end
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
           cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_cells[matrix_idx] = cell
-          if debug
-            puts "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
-          end
+          LOGGER.debug { "    matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}" }
         end
         matrix_idx += 1
 
@@ -534,14 +520,14 @@ module Nucleoc
       matrix_offset : Int32,
       compute_indices : Bool,
     )
-      # DEBUG
-      debug = Matcher.debug_optimal? && ((haystack.size == 5 && needle_char == 'b') || (haystack.size == 14 && needle_char == 'h') || (haystack.size == 3 && needle_char == 'c') || (haystack.size == 7 && needle_char.in?(['2', '3', '5', '6'])))
-      if debug
-        puts "=== DEBUG score_row ==="
-        puts "compute_indices: #{compute_indices}"
-        puts "needle_idx: #{needle_idx}, needle_char: #{needle_char.inspect}, next_needle_char: #{next_needle_char.inspect}"
-        puts "row_off: #{row_off}, next_row_off: #{next_row_off}"
-        puts "matrix_offset: #{matrix_offset}"
+      LOGGER.debug do
+        String.build do |io|
+          io << "optimal: score_row\n"
+          io << "compute_indices: #{compute_indices}\n"
+          io << "needle_idx: #{needle_idx}, needle_char: #{needle_char.inspect}, next_needle_char: #{next_needle_char.inspect}\n"
+          io << "row_off: #{row_off}, next_row_off: #{next_row_off}\n"
+          io << "matrix_offset: #{matrix_offset}"
+        end
       end
       adj_next_row_off = next_row_off - 1
       relative_row_off = row_off.to_i - needle_idx.to_i
@@ -560,14 +546,10 @@ module Nucleoc
       first_len.times do |j|
         i = row_off.to_i + j
         row_idx = relative_row_off + j
-        if debug
-          puts "    first loop j=#{j}, i=#{i}, row_idx=#{row_idx}"
-        end
+        LOGGER.debug { "    first loop j=#{j}, i=#{i}, row_idx=#{row_idx}" }
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
-        if debug
-          puts "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}"
-        end
+        LOGGER.debug { "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}" }
 
         # Not first row: get m_cell from current_row slice [relative_row_off..next_relative_row_off)
         m_cell = if row_idx >= 0 && row_idx < current_row.size
@@ -575,16 +557,12 @@ module Nucleoc
                  else
                    ScoreCell::UNMATCHED
                  end
-        if debug
-          puts "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}"
-        end
+        LOGGER.debug { "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}" }
 
         if compute_indices && matrix_idx < matrix_cells.size
           cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_cells[matrix_idx] = cell
-          if debug
-            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
-          end
+          LOGGER.debug { "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}" }
         end
         matrix_idx += 1
 
@@ -602,20 +580,14 @@ module Nucleoc
         i = adj_next_row_off.to_i + j
         relative_i = i - relative_row_off
         row_idx = next_relative_row_off + j
-        if debug
-          puts "    second loop j=#{j}, i=#{i}, relative_i=#{relative_i}, row_idx=#{row_idx}"
-        end
+        LOGGER.debug { "    second loop j=#{j}, i=#{i}, relative_i=#{relative_i}, row_idx=#{row_idx}" }
 
         p_score, p_matched = calc_p_score(prev_p_score, prev_m_score)
-        if debug
-          puts "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}"
-        end
+        LOGGER.debug { "      p_score=#{p_score}, p_matched=#{p_matched}, prev_p_score=#{prev_p_score}, prev_m_score=#{prev_m_score}" }
 
         # Not first row: get m_cell from current_row at row_idx (matches Rust's *score_cell)
         m_cell = current_row[row_idx]
-        if debug
-          puts "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}"
-        end
+        LOGGER.debug { "      m_cell.score=#{m_cell.score}, m_cell.matched?=#{m_cell.matched?}" }
 
         # Update current_row for next_needle_char at position i+1
         if row_idx >= 0 && row_idx < current_row.size
@@ -624,17 +596,13 @@ module Nucleoc
                                  else
                                    ScoreCell::UNMATCHED
                                  end
-          if debug
-            puts "      Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})"
-          end
+          LOGGER.debug { "      Set current_row[#{row_idx}] = #{current_row[row_idx].score} (matched? #{current_row[row_idx].matched?})" }
         end
 
         if compute_indices && matrix_idx < matrix_cells.size
           cell = matrix_cells[matrix_idx].set(p_matched, m_cell.matched?)
           matrix_cells[matrix_idx] = cell
-          if debug
-            puts "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}"
-          end
+          LOGGER.debug { "      matrix[#{matrix_idx}] set p=#{p_matched}, m=#{m_cell.matched?}, data=#{cell.@data.to_s(2)}" }
         end
         matrix_idx += 1
 
@@ -702,12 +670,16 @@ module Nucleoc
       needle_len.times { indices << 0_u32 }
 
       width = current_row.size
-      debug = Matcher.debug_optimal?
-      if debug
-        puts "=== RECONSTRUCT DEBUG ==="
-        puts "max_score_end: #{max_score_end}"
-        puts "row_offs: #{row_offs}"
-        puts "current_row: #{current_row.each_with_index.map { |cell, idx| "[#{idx}] score=#{cell.score} matched?=#{cell.matched?}" }.join(", ")}"
+      current_row_debug = current_row.each_with_index.map do |cell, idx|
+        "[#{idx}] score=#{cell.score} matched?=#{cell.matched?}"
+      end.join(", ")
+      LOGGER.debug do
+        String.build do |io|
+          io << "=== reconstruct_optimal_path ===\n"
+          io << "max_score_end: #{max_score_end}\n"
+          io << "row_offs: #{row_offs}\n"
+          io << "current_row: #{current_row_debug}"
+        end
       end
 
       last_row_off = row_offs[needle_len - 1]
@@ -726,18 +698,13 @@ module Nucleoc
         remaining_cells = matrix_cells[0, matrix_len]
         haystack_len = width + needle_len - 1
 
-        if debug
-          puts "  haystack_len = #{haystack_len}"
-          puts "  Expected total cells: #{matrix_len}"
-        end
+        LOGGER.debug { "  haystack_len = #{haystack_len}\n  expected total cells: #{matrix_len}" }
 
         (0...(needle_len - 1)).to_a.reverse.each do |i|
           row_off = row_offs[i]
           row_size = width - (row_off.to_i - i)
 
-          if debug
-            puts "  Row #{i}: row_off=#{row_off}, row_size=#{row_size}, remaining_cells.size=#{remaining_cells.size}"
-          end
+          LOGGER.debug { "  row #{i}: row_off=#{row_off}, row_size=#{row_size}, remaining_cells.size=#{remaining_cells.size}" }
 
           # Take row_size cells from the end of remaining_cells
           split_idx = remaining_cells.size - row_size
@@ -747,8 +714,8 @@ module Nucleoc
           rows << {i, row_off, row_cells}
         end
 
-        if debug && remaining_cells.size > 0
-          puts "  WARNING: remaining_cells not empty: #{remaining_cells.size}"
+        if remaining_cells.size > 0
+          LOGGER.debug { "  WARNING: remaining_cells not empty: #{remaining_cells.size}" }
         end
 
         # rows[0] is last row (needle_len-2), rows[1] is previous, etc.
@@ -756,40 +723,35 @@ module Nucleoc
         row_idx, row_off, row = rows[row_index]
         col += last_row_off.to_i - row_off.to_i - 1
 
-        if debug
-          puts "=== DEBUG reconstruct_optimal_path (Rust algorithm) ==="
-          puts "max_score_end: #{max_score_end}, col after adjustment: #{col}"
-          puts "row_offs: #{row_offs}, last_row_off: #{last_row_off}"
-          puts "width: #{width}, matrix_len: #{matrix_len}"
-          puts "rows sizes: #{rows.map { |_, _, r| r.size }}"
-          # Print each row's cells
-          rows.each_with_index do |(i, off, r), idx|
-            puts "Row #{i} (off=#{off}, size=#{r.size}):"
-            r.each_with_index do |cell, c|
-              puts "  col #{c}: p=#{cell.get(false)} m=#{cell.get(true)} data=#{cell.@data}"
+        LOGGER.debug do
+          String.build do |io|
+            io << "=== reconstruct_optimal_path (Rust algorithm) ===\n"
+            io << "max_score_end: #{max_score_end}, col after adjustment: #{col}\n"
+            io << "row_offs: #{row_offs}, last_row_off: #{last_row_off}\n"
+            io << "width: #{width}, matrix_len: #{matrix_len}\n"
+            io << "rows sizes: #{rows.map { |_, _, r| r.size }}\n"
+            rows.each_with_index do |(i, off, r), _idx|
+              io << "Row #{i} (off=#{off}, size=#{r.size}):\n"
+              r.each_with_index do |cell, c|
+                io << "  col #{c}: p=#{cell.get(false)} m=#{cell.get(true)} data=#{cell.@data}\n"
+              end
             end
           end
         end
 
         loop do
-          if debug
-            puts "  Loop: row_idx=#{row_idx}, col=#{col}, matched=#{matched}, row.size=#{row.size}"
-          end
+          LOGGER.debug { "  Loop: row_idx=#{row_idx}, col=#{col}, matched=#{matched}, row.size=#{row.size}" }
 
           if matched
             indices[indices_start + row_idx] = start + col.to_u32 + row_off.to_u32
-            if debug
-              puts "  Set index #{row_idx} = #{start} + #{col} + #{row_off} = #{start + col.to_u32 + row_off.to_u32}"
-            end
+            LOGGER.debug { "  Set index #{row_idx} = #{start} + #{col} + #{row_off} = #{start + col.to_u32 + row_off.to_u32}" }
           end
 
           # Check bounds before accessing row[col]
           break if col < 0 || col >= row.size
 
           next_matched = row[col].get(matched)
-          if debug
-            puts "  row[#{col}].get(#{matched}) = #{next_matched}"
-          end
+          LOGGER.debug { "  row[#{col}].get(#{matched}) = #{next_matched}" }
 
           if matched
             row_index += 1
@@ -809,9 +771,7 @@ module Nucleoc
           # we need to set the index for this position (using col+1)
           if col < 0 && matched
             indices[indices_start + row_idx] = start + (col + 1).to_u32 + row_off.to_u32
-            if debug
-              puts "  Setting index for negative col transition: row_idx=#{row_idx}, col=#{col + 1}, row_off=#{row_off}"
-            end
+            LOGGER.debug { "  Setting index for negative col transition: row_idx=#{row_idx}, col=#{col + 1}, row_off=#{row_off}" }
             break
           end
         end

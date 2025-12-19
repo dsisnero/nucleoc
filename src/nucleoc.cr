@@ -1,4 +1,5 @@
 # Main entry point for the nucleoc library
+require "log"
 require "./nucleoc/config"
 require "./nucleoc/chars"
 require "./nucleoc/utf32_str"
@@ -7,6 +8,8 @@ require "./nucleoc/matcher"
 require "./nucleoc/pattern"
 require "./nucleoc/prefilter"
 require "./nucleoc/api"
+
+Log.setup_from_env
 
 # TODO: Write documentation for `Nucleoc`
 module Nucleoc
