@@ -334,6 +334,18 @@ module Nucleoc
     result
   end
 
+  # Parallel fuzzy match using CML.spawn for lightweight parallelism
+  def self.parallel_fuzzy_match_spawn(haystacks : Array(String), needle : String, config : Config = Config.new, chunk_size : Int32? = nil) : Array(UInt16?)
+    matcher = Matcher.new(config)
+    matcher.parallel_fuzzy_match(haystacks, needle, chunk_size)
+  end
+
+  # Parallel fuzzy match with indices using CML.spawn
+  def self.parallel_fuzzy_indices_spawn(haystacks : Array(String), needle : String, config : Config = Config.new, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+    matcher = Matcher.new(config)
+    matcher.parallel_fuzzy_indices(haystacks, needle, chunk_size)
+  end
+
   def self.substring_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?
     matcher = Matcher.new(config)
     matcher.substring_match(haystack, needle)

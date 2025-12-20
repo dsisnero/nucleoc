@@ -1,5 +1,5 @@
-require "./spec_helper"
-require "../src/nucleoc"
+require "../spec_helper"
+require "../../src/nucleoc"
 
 describe "Score tests" do
   describe "test_hello_world_score" do

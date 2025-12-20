@@ -258,4 +258,146 @@ describe Nucleoc::Pattern do
       atom.negative?.should be_true
     end
   end
+
+  describe "Comprehensive pattern tests (from Rust)" do
+    it "negative() test from Rust" do
+      # Test 1: "!foo" -> negative substring
+      pat = Nucleoc::Atom.parse("!foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_true
+      pat.kind.should eq(Nucleoc::AtomKind::Substring)
+      pat.needle.to_s.should eq("foo")
+
+      # Test 2: "!^foo" -> negative prefix
+      pat = Nucleoc::Atom.parse("!^foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_true
+      pat.kind.should eq(Nucleoc::AtomKind::Prefix)
+      pat.needle.to_s.should eq("foo")
+
+      # Test 3: "!foo$" -> negative postfix
+      pat = Nucleoc::Atom.parse("!foo$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_true
+      pat.kind.should eq(Nucleoc::AtomKind::Postfix)
+      pat.needle.to_s.should eq("foo")
+
+      # Test 4: "!^foo$" -> negative exact
+      pat = Nucleoc::Atom.parse("!^foo$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_true
+      pat.kind.should eq(Nucleoc::AtomKind::Exact)
+      pat.needle.to_s.should eq("foo")
+    end
+
+    it "pattern_kinds() test from Rust" do
+      # Test fuzzy
+      pat = Nucleoc::Atom.parse("foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_false
+      pat.kind.should eq(Nucleoc::AtomKind::Fuzzy)
+      pat.needle.to_s.should eq("foo")
+
+      # Test substring
+      pat = Nucleoc::Atom.parse("'foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_false
+      pat.kind.should eq(Nucleoc::AtomKind::Substring)
+      pat.needle.to_s.should eq("foo")
+
+      # Test prefix
+      pat = Nucleoc::Atom.parse("^foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_false
+      pat.kind.should eq(Nucleoc::AtomKind::Prefix)
+      pat.needle.to_s.should eq("foo")
+
+      # Test postfix
+      pat = Nucleoc::Atom.parse("foo$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_false
+      pat.kind.should eq(Nucleoc::AtomKind::Postfix)
+      pat.needle.to_s.should eq("foo")
+
+      # Test exact
+      pat = Nucleoc::Atom.parse("^foo$", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.negative?.should be_false
+      pat.kind.should eq(Nucleoc::AtomKind::Exact)
+      pat.needle.to_s.should eq("foo")
+    end
+
+    it "case_matching() test from Rust" do
+      # Smart case: lowercase pattern -> case insensitive
+      pat = Nucleoc::Atom.parse("foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("foo")
+
+      # Smart case: uppercase in pattern -> case sensitive
+      pat = Nucleoc::Atom.parse("Foo", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_false
+      pat.needle.to_s.should eq("Foo")
+
+      # Ignore mode: always case insensitive
+      pat = Nucleoc::Atom.parse("Foo", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("foo")
+
+      # Respect mode: always case sensitive
+      pat = Nucleoc::Atom.parse("Foo", Nucleoc::CaseMatching::Respect, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_false
+      pat.needle.to_s.should eq("Foo")
+
+      # Unicode: Äxx with Ignore -> lowercased to äxx
+      pat = Nucleoc::Atom.parse("Äxx", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("äxx")
+
+      # Unicode: Äxx with Respect -> case sensitive, preserves Äxx
+      pat = Nucleoc::Atom.parse("Äxx", Nucleoc::CaseMatching::Respect, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_false
+
+      # Smart case with ASCII uppercase A -> case sensitive
+      pat = Nucleoc::Atom.parse("Axx", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_false
+      pat.needle.to_s.should eq("Axx")
+
+      # Chinese character "你" (no case) -> Smart treats as lowercase (case insensitive)
+      pat = Nucleoc::Atom.parse("你xx", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("你xx")
+
+      # Chinese character with Ignore -> case insensitive (same)
+      pat = Nucleoc::Atom.parse("你xx", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("你xx")
+
+      # Coptic capital letter Ⲽ -> Smart sees uppercase -> case sensitive
+      pat = Nucleoc::Atom.parse("Ⲽxx", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_false
+      pat.needle.to_s.should eq("Ⲽxx")
+
+      # Coptic with Ignore -> lowercased to ⲽxx
+      pat = Nucleoc::Atom.parse("Ⲽxx", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pat.ignore_case?.should be_true
+      pat.needle.to_s.should eq("ⲽxx")
+    end
+
+    it "pattern_atoms() test from Rust" do
+      # Simple whitespace separation
+      pattern = Nucleoc::Pattern.parse("a b", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pattern.atoms.size.should eq(2)
+      pattern.atoms[0].needle.to_s.should eq("a")
+      pattern.atoms[1].needle.to_s.should eq("b")
+
+      # Newline separation
+      pattern = Nucleoc::Pattern.parse("a\n b", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pattern.atoms.size.should eq(2)
+      pattern.atoms[0].needle.to_s.should eq("a")
+      pattern.atoms[1].needle.to_s.should eq("b")
+
+      # Whitespace trimming and carriage return
+      pattern = Nucleoc::Pattern.parse("  a b\r\n", Nucleoc::CaseMatching::Ignore, Nucleoc::Normalization::Smart)
+      pattern.atoms.size.should eq(2)
+      pattern.atoms[0].needle.to_s.should eq("a")
+      pattern.atoms[1].needle.to_s.should eq("b")
+
+      # Japanese full-width space (U+3000) separation
+      pattern = Nucleoc::Pattern.parse("ほ　げ", Nucleoc::CaseMatching::Smart, Nucleoc::Normalization::Smart)
+      pattern.atoms.size.should eq(2)
+      pattern.atoms[0].needle.to_s.should eq("ほ")
+      pattern.atoms[1].needle.to_s.should eq("げ")
+    end
+  end
 end

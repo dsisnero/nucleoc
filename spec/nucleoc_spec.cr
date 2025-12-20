@@ -254,30 +254,30 @@ describe Nucleoc do
       results[2].data.should eq("hello there world")
       results.each(&.score.should(eq(140)))
     end
-    end
-
-    it "supports timeout in parallel_fuzzy_match" do
-      haystacks = ["foo", "bar", "foobar", "fbar", "baz", "qux"]
-      needle = "fb"
-      # Very short timeout - should return some results (possibly all nil)
-      scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, timeout: 1.millisecond)
-      scores.size.should eq haystacks.size
-    end
-
-    it "supports timeout in parallel_fuzzy_indices" do
-      haystacks = ["hello", "yellow", "mellow", "fellow", "bellow"]
-      needle = "elow"
-      # Very short timeout - should return some results
-      results = Nucleoc.parallel_fuzzy_indices(haystacks, needle, timeout: 1.millisecond)
-      results.size.should eq haystacks.size
-    end
-
-    pending "timeout bug" do
-      haystacks = ["foo", "bar", "foobar", "fbar", "baz", "qux"]
-      needle = "fb"
-      scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, timeout: 5.seconds)
-      matcher = Nucleoc::Matcher.new
-      expected = haystacks.map { |h| matcher.fuzzy_match(h, needle) }
-      scores.should eq expected
-    end
   end
+
+  it "supports timeout in parallel_fuzzy_match" do
+    haystacks = ["foo", "bar", "foobar", "fbar", "baz", "qux"]
+    needle = "fb"
+    # Very short timeout - should return some results (possibly all nil)
+    scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, timeout: 1.millisecond)
+    scores.size.should eq haystacks.size
+  end
+
+  it "supports timeout in parallel_fuzzy_indices" do
+    haystacks = ["hello", "yellow", "mellow", "fellow", "bellow"]
+    needle = "elow"
+    # Very short timeout - should return some results
+    results = Nucleoc.parallel_fuzzy_indices(haystacks, needle, timeout: 1.millisecond)
+    results.size.should eq haystacks.size
+  end
+
+  it "completes all work with reasonable timeout" do
+    haystacks = ["foo", "bar", "foobar", "fbar", "baz", "qux"]
+    needle = "fb"
+    scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, timeout: 5.seconds)
+    matcher = Nucleoc::Matcher.new
+    expected = haystacks.map { |h| matcher.fuzzy_match(h, needle) }
+    scores.should eq expected
+  end
+end

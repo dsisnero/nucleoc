@@ -20,6 +20,16 @@ module Nucleoc
     Smart
   end
 
+  # Status of a pattern column for incremental updates.
+  enum PatternStatus
+    # Pattern unchanged since last match.
+    Unchanged
+    # Pattern updated, can reuse previous matches with new items.
+    Update
+    # Pattern changed significantly, need full rescore.
+    Rescore
+  end
+
   # The kind of matching algorithm to run for an atom.
   enum AtomKind
     # Fuzzy matching where the needle must match any haystack characters
