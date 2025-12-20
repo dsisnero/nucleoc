@@ -402,4 +402,74 @@ describe Nucleoc::Matcher do
       matcher.postfix_match("hello", "hello world").should be_nil
     end
   end
+
+  describe "parallel fuzzy matching" do
+    it "matches basic fuzzy patterns in parallel" do
+      matcher = Nucleoc::Matcher.new
+      haystacks = ["fooBarbaz1", "/usr/share/doc/at/ChangeLog", "foo bar baz", "hello world"]
+      needle = "obr"
+
+      parallel_scores = matcher.parallel_fuzzy_match(haystacks, needle)
+      sequential_scores = haystacks.map { |haystack| matcher.fuzzy_match(haystack, needle) }
+
+      parallel_scores.should eq(sequential_scores)
+    end
+
+    it "handles empty array" do
+      matcher = Nucleoc::Matcher.new
+      matcher.parallel_fuzzy_match([] of String, "needle").should eq([] of UInt16?)
+      matcher.parallel_fuzzy_indices([] of String, "needle").should eq([] of Tuple(UInt16, Array(UInt32))?)
+    end
+
+    it "handles single item array" do
+      matcher = Nucleoc::Matcher.new
+      haystacks = ["fooBarbaz1"]
+      needle = "obr"
+
+      parallel_scores = matcher.parallel_fuzzy_match(haystacks, needle)
+      sequential_score = matcher.fuzzy_match(haystacks[0], needle)
+      parallel_scores.should eq([sequential_score])
+    end
+
+    it "matches with indices in parallel" do
+      matcher = Nucleoc::Matcher.new
+      haystacks = ["fooBarbaz1", "/usr/share/doc/at/ChangeLog", "foo bar baz", "hello world"]
+      needle = "obr"
+
+      parallel_results = matcher.parallel_fuzzy_indices(haystacks, needle)
+      sequential_results = haystacks.map do |haystack|
+        indices = [] of UInt32
+        score = matcher.fuzzy_indices(haystack, needle, indices)
+        score ? {score, indices} : nil
+      end
+
+      parallel_results.should eq(sequential_results)
+    end
+
+    it "respects chunk size parameter" do
+      matcher = Nucleoc::Matcher.new
+      haystacks = ["fooBarbaz1", "/usr/share/doc/at/ChangeLog", "foo bar baz", "hello world", "test", "another"]
+      needle = "obr"
+
+      # Use chunk size 2 (should create 3 chunks)
+      parallel_scores = matcher.parallel_fuzzy_match(haystacks, needle, chunk_size: 2)
+      sequential_scores = haystacks.map { |haystack| matcher.fuzzy_match(haystack, needle) }
+
+      parallel_scores.should eq(sequential_scores)
+    end
+
+    it "scales with many items" do
+      matcher = Nucleoc::Matcher.new
+      # Create 1000 haystacks with predictable pattern
+      haystacks = Array.new(1000) { |i| "haystack#{i}" }
+      needle = "hay"
+
+      parallel_scores = matcher.parallel_fuzzy_match(haystacks, needle)
+      # Don't test all, just ensure we got correct number of results
+      parallel_scores.size.should eq(1000)
+      parallel_scores.each do |score|
+        score.should_not be_nil
+      end
+    end
+  end
 end

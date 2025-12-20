@@ -6,7 +6,7 @@ module Nucleoc
     getter index : Int32
     getter haystack : String
     getter needle : String
-    getter compute_indices : Bool
+    getter? compute_indices : Bool
     getter indices : Array(UInt32)
     getter response : CML::Chan(ParallelMatchResponse)
 
@@ -79,13 +79,13 @@ module Nucleoc
         spawn do
           loop do
             request = @work_channel.recv
-            score = if request.compute_indices
+            score = if request.compute_indices?
                       request.indices.clear
                       matcher.fuzzy_indices(request.haystack, request.needle, request.indices)
                     else
                       matcher.fuzzy_match(request.haystack, request.needle)
                     end
-            copied_indices = request.compute_indices ? request.indices.dup : nil
+            copied_indices = request.compute_indices? ? request.indices.dup : nil
             request.response.send(ParallelMatchResponse.new(request.index, score, copied_indices))
           end
         end
