@@ -11,3 +11,10 @@
 .crystal_cache
 debug_*.cr
 test_*.cr
+boxcar
+test_par_sort
+final_test.cr
+find_fail.cr
+quick_test.cr
+lib/ameba
+lib/cml

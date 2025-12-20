@@ -301,6 +301,30 @@ module Nucleoc
     score ? {score, indices} : nil
   end
 
+  # Parallel fuzzy match across many haystacks using a shared needle.
+  # Returns an array of scores in the same order as the input.
+  # Uses CML-based worker pool for proper concurrent processing.
+  def self.parallel_fuzzy_match(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil) : Array(UInt16?)
+    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
+    pool.match_many(haystacks, needle, false).first
+  end
+
+  # Parallel fuzzy match with indices across many haystacks using a shared needle.
+  # Returns an array of optional tuples {score, indices} in the same order as the input.
+  # Uses CML-based worker pool for proper concurrent processing.
+  def self.parallel_fuzzy_indices(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
+    scores, indices = pool.match_many(haystacks, needle, true)
+    result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+    scores.each_with_index do |score, idx|
+      if score && indices
+        idx_list = indices[idx]
+        result[idx] = {score, idx_list.not_nil!} if idx_list
+      end
+    end
+    result
+  end
+
   def self.substring_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?
     matcher = Matcher.new(config)
     matcher.substring_match(haystack, needle)
