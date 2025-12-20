@@ -242,5 +242,17 @@ describe Nucleoc do
       snapshot.items[2].data.should eq("hello there world")
       snapshot.items[2].score.should eq(140)
     end
+
+    it "sorts match_list results descending by score using BoxcarVector" do
+      matcher = Nucleoc.new_matcher(String)
+      items = ["hello world", "hello", "hello there world", "world"]
+      results = matcher.match_list(items, "hello")
+      results.size.should eq(3)
+      # Should be sorted descending by score (all scores equal 140)
+      results[0].data.should eq("hello world")
+      results[1].data.should eq("hello")
+      results[2].data.should eq("hello there world")
+      results.each(&.score.should(eq(140)))
+    end
   end
 end

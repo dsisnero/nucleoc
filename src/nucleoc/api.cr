@@ -1,14 +1,21 @@
 require "cml"
+require "./boxcar"
 
 # Main API for nucleoc fuzzy matching
 module Nucleoc
   struct MatchResult
+    include Comparable(MatchResult)
+
     getter item : String
     getter data : String
     getter score : UInt16
 
     def initialize(@item : String, @score : UInt16)
       @data = @item
+    end
+
+    def <=>(other : self) : Int32
+      other.score <=> score # descending by score
     end
   end
 
@@ -204,14 +211,13 @@ module Nucleoc
     def match_list(items : Array(String), pattern : String) : Array(MatchResult)
       matcher = Matcher.new(@matcher.config)
       pat = Pattern.parse(pattern)
-      results = [] of MatchResult
+      vector = BoxcarVector(MatchResult).new
       items.each do |item|
         if score = pat.match(matcher, item)
-          results << MatchResult.new(item, score)
+          vector.push(MatchResult.new(item, score))
         end
       end
-      results.sort! { |a, b| b.score <=> a.score }
-      results
+      vector.sort_snapshot { |a, b| a < b }
     end
 
     def pattern=(pattern_str : String)
@@ -267,14 +273,14 @@ module Nucleoc
     private def refresh_snapshot : Status
       changed = false
       if @snapshot.nil?
-        matched = [] of MatchResult
+        vector = BoxcarVector(MatchResult).new
         @items.each do |item|
           if score = @pattern.match(@matcher, item)
-            matched << MatchResult.new(item, score)
+            vector.push(MatchResult.new(item, score))
           end
         end
-        matched.sort! { |a, b| b.score <=> a.score }
-        @snapshot = Snapshot.new(matched, @pattern)
+        sorted = vector.sort_snapshot { |a, b| a < b }
+        @snapshot = Snapshot.new(sorted, @pattern)
         changed = true
       end
       Status.new(changed: changed, running: false)
