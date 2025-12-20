@@ -7,6 +7,9 @@ require "./nucleoc/score"
 require "./nucleoc/matcher"
 require "./nucleoc/pattern"
 require "./nucleoc/prefilter"
+require "./nucleoc/boxcar"
+require "./nucleoc/worker_pool"
+require "./nucleoc/worker_pool_cml"
 require "./nucleoc/api"
 
 Log.setup_from_env

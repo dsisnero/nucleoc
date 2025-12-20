@@ -47,7 +47,7 @@ crystal build --release src/nucleoc.cr
 ```
 ## Issue Tracking with bd (beads)
 
-**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
+**IMPORTANT**: This project uses **bd (beads)** for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods. Do not use internal 'todo' tool, use beads for 'todo' items
 
 ### Why bd?
 
