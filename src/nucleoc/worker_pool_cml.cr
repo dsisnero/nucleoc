@@ -1,6 +1,7 @@
 require "cml"
 require "atomic"
 require "./par_sort"
+require "./error_handling"
 
 module Nucleoc
   # CML-based worker pool using proper event composition
@@ -10,6 +11,8 @@ module Nucleoc
 
     private alias WorkerTask = Task | BatchTask
     @workers : Array(CML::Chan(WorkerTask))
+    @circuit_breaker : ErrorHandling::CircuitBreaker
+    @supervisor : ErrorHandling::Supervisor
 
     # Task for a worker to process
     private struct Task
@@ -68,7 +71,10 @@ module Nucleoc
     def initialize(size : Int32 = CMLWorkerPool.default_size, @config : Config = Config::DEFAULT)
       @size = size > 0 ? size : 1
       @workers = Array.new(@size) { CML::Chan(WorkerTask).new }
+      @circuit_breaker = ErrorHandling::CircuitBreaker.new
+      @supervisor = ErrorHandling::Supervisor.new
       start_workers
+      @supervisor.start
     end
 
     def self.default_size : Int32
@@ -282,15 +288,25 @@ module Nucleoc
       timeout_evt = CML.wrap(CML.timeout(timeout)) { :timeout.as(TaskResult | Symbol) }
 
       # Now we have Event(TaskResult) and Event(Symbol)
-      # CML.choose will return TaskResult | Symbol
+      # Apply circuit breaker to work choice
+      circuit_event = @circuit_breaker.call_event(work_choice)
+      # circuit_event returns TaskResult | Symbol | Nil
+      # Wrap to convert nil to :circuit_open symbol
+      circuit_wrapped = CML.wrap(circuit_event) { |result| result || :circuit_open.as(TaskResult | Symbol) }
+
+      # Combine circuit-wrapped work event with timeout
       begin
-        result = CML.sync(CML.choose([work_choice, timeout_evt]))
+        result = CML.sync(CML.choose([circuit_wrapped, timeout_evt]))
 
         # Handle union type
-        if result.is_a?(TaskResult)
+        case result
+        when TaskResult
           {result.score, result.indices}
+        when :timeout
+          {nil, nil}
+        when :circuit_open
+          {nil, nil}
         else
-          # result is :timeout symbol
           {nil, nil}
         end
       rescue ex
@@ -302,40 +318,58 @@ module Nucleoc
       @size.times do |worker_idx|
         worker_ch = @workers[worker_idx]
 
-        spawn do
+        # Supervise worker fiber for fault tolerance
+        _control_ch = @supervisor.supervise(worker_idx) do
           matcher = Matcher.new(@config)
 
           loop do
             # Wait for task (blocks until task arrives)
             task = worker_ch.recv
 
-            case task
-            when Task
-              # Process single task
-              score = if task.compute_indices?
-                        indices = [] of UInt32
-                        matcher.fuzzy_indices(task.haystack, task.needle, indices)
-                      else
-                        matcher.fuzzy_match(task.haystack, task.needle)
-                      end
+            begin
+              case task
+              when Task
+                # Process single task
+                score = if task.compute_indices?
+                          indices = [] of UInt32
+                          matcher.fuzzy_indices(task.haystack, task.needle, indices)
+                        else
+                          matcher.fuzzy_match(task.haystack, task.needle)
+                        end
 
-              indices = task.compute_indices? ? indices : nil
-              task.reply_channel.send(TaskResult.new(task.id, score, indices))
-            when BatchTask
-              # Process batch using parallel matcher for intra-task parallelism
-              if task.compute_indices?
-                chunk_results = matcher.parallel_fuzzy_indices(task.haystacks, task.needle)
-                # Convert to BatchTaskResult format
-                scores = chunk_results.map { |res| res.try(&.[0]) }
-                indices = chunk_results.map { |res| res.try(&.[1]) }
-                task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, indices))
-              else
-                scores = matcher.parallel_fuzzy_match(task.haystacks, task.needle)
-                task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, nil))
+                indices = task.compute_indices? ? indices : nil
+                task.reply_channel.send(TaskResult.new(task.id, score, indices))
+              when BatchTask
+                # Process batch using parallel matcher for intra-task parallelism
+                if task.compute_indices?
+                  chunk_results = matcher.parallel_fuzzy_indices(task.haystacks, task.needle)
+                  # Convert to BatchTaskResult format
+                  scores = chunk_results.map { |res| res.try(&.[0]) }
+                  indices = chunk_results.map { |res| res.try(&.[1]) }
+                  task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, indices))
+                else
+                  scores = matcher.parallel_fuzzy_match(task.haystacks, task.needle)
+                  task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, nil))
+                end
+              end
+            rescue ex
+              # Log the error and send a failure result
+              Log.error(exception: ex) { "Worker #{worker_idx} failed processing task: #{ex.message}" }
+
+              case task
+              when Task
+                # Send nil result to indicate failure
+                task.reply_channel.send(TaskResult.new(task.id, nil, nil))
+              when BatchTask
+                # Send nil scores for all items in batch
+                nil_scores = Array(UInt16?).new(task.haystacks.size, nil)
+                nil_indices = task.compute_indices? ? Array(Array(UInt32)?).new(task.haystacks.size, nil) : nil
+                task.reply_channel.send(BatchTaskResult.new(task.start_idx, nil_scores, nil_indices))
               end
             end
           end
         end
+        # _control_ch can be used to stop/restart worker if needed
       end
     end
   end
