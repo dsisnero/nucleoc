@@ -1,4 +1,5 @@
 require "cml"
+require "./par_sort"
 
 module Nucleoc
   # Lock-free, append-only vector for parallel processing.
@@ -113,6 +114,16 @@ module Nucleoc
     # Create a parallel snapshot for concurrent processing.
     def par_snapshot(start_index : Int64 = 0) : ParSnapshot(T)
       ParSnapshot(T).new(self, start_index)
+    end
+
+    # Sort snapshot using parallel quicksort.
+    # Returns a new sorted array.
+    def sort_snapshot(start_index : Int64 = 0, &is_less : T, T -> Bool) : Array(T)
+      snapshot = self.snapshot(start_index)
+      array = snapshot.to_a
+      canceled = Atomic(Bool).new(false)
+      ParSort.par_quicksort(array, canceled, &is_less)
+      array
     end
 
     # Clear all elements (for reuse).

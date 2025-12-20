@@ -190,4 +190,40 @@ describe Nucleoc::BoxcarVector do
       vec.size.should eq 1
     end
   end
+
+  describe "sorting" do
+    it "sorts snapshot with comparator" do
+      vec = Nucleoc::BoxcarVector(Int32).new
+      vec.push_all([5, 3, 8, 1, 2])
+      sorted = vec.sort_snapshot { |a, b| a < b }
+      sorted.should eq [1, 2, 3, 5, 8]
+    end
+
+    it "sorts snapshot with start index" do
+      vec = Nucleoc::BoxcarVector(Int32).new
+      10.times { |i| vec.push(i) }
+      sorted = vec.sort_snapshot(5) { |a, b| a < b }
+      sorted.should eq (5...10).to_a
+    end
+
+    it "sorts snapshot descending" do
+      vec = Nucleoc::BoxcarVector(Int32).new
+      vec.push_all([5, 3, 8, 1, 2])
+      sorted = vec.sort_snapshot { |a, b| a > b }
+      sorted.should eq [8, 5, 3, 2, 1]
+    end
+
+    it "handles empty snapshot" do
+      vec = Nucleoc::BoxcarVector(Int32).new
+      sorted = vec.sort_snapshot { |a, b| a < b }
+      sorted.should eq [] of Int32
+    end
+
+    it "handles single element snapshot" do
+      vec = Nucleoc::BoxcarVector(Int32).new
+      vec.push(42)
+      sorted = vec.sort_snapshot { |a, b| a < b }
+      sorted.should eq [42]
+    end
+  end
 end
