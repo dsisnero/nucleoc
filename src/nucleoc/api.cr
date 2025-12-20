@@ -1,5 +1,6 @@
 require "cml"
 require "./boxcar"
+require "./multi_pattern"
 
 # Main API for nucleoc fuzzy matching
 module Nucleoc
@@ -21,9 +22,9 @@ module Nucleoc
 
   class Snapshot
     getter items : Array(MatchResult)
-    getter pattern : Pattern
+    getter pattern : MultiPattern
 
-    def initialize(@items : Array(MatchResult), @pattern : Pattern)
+    def initialize(@items : Array(MatchResult), @pattern : MultiPattern)
     end
 
     def size : Int32
@@ -70,7 +71,7 @@ module Nucleoc
 
     getter kind : Kind
     getter payload : Array(String)?
-    getter pattern : Pattern?
+    getter pattern : MultiPattern?
     getter? clear_snapshot : Bool
     getter reply : CML::Chan(Status)?
 
@@ -86,7 +87,7 @@ module Nucleoc
       new(Kind::Clear, nil, nil, false, nil)
     end
 
-    def self.update_pattern(pattern : Pattern) : self
+    def self.update_pattern(pattern : MultiPattern) : self
       new(Kind::UpdatePattern, nil, pattern, false, nil)
     end
 
@@ -114,7 +115,7 @@ module Nucleoc
     getter worker_count : Int32
 
     @matcher : Matcher
-    @pattern : Pattern
+    @pattern : MultiPattern
     @items : Array(String)
     @snapshot : Snapshot?
     @active_injectors : Int32 = 0
@@ -127,7 +128,7 @@ module Nucleoc
 
     def initialize(config : Config = Config.new, notify : -> _ = -> { nil }, num_threads : Int32? = 1, columns : Int32 = 1)
       @matcher = Matcher.new(config)
-      @pattern = Pattern.new([] of Atom)
+      @pattern = MultiPattern.new(columns)
       @items = [] of String
       @snapshot = nil
       @worker_count = num_threads || 1
@@ -192,8 +193,10 @@ module Nucleoc
     end
 
     def update_pattern(pattern_str : String, case_matching : CaseMatching, normalization : Normalization)
-      pat = Pattern.parse(pattern_str, case_matching, normalization)
-      enqueue(Command(T).update_pattern(pat))
+      # Reparse column 0 of the multi-pattern
+      @pattern.reparse(0, pattern_str, case_matching, normalization, false)
+      # Invalidate snapshot
+      @snapshot = nil
     end
 
     def sort_results(_sort_results : Bool)
@@ -224,7 +227,7 @@ module Nucleoc
       update_pattern(pattern_str, CaseMatching::Smart, Normalization::Smart)
     end
 
-    def pattern : Pattern
+    def pattern : MultiPattern
       @pattern
     end
 
@@ -275,7 +278,7 @@ module Nucleoc
       if @snapshot.nil?
         vector = BoxcarVector(MatchResult).new
         @items.each do |item|
-          if score = @pattern.match(@matcher, item)
+          if score = @pattern.score([item], @matcher)
             vector.push(MatchResult.new(item, score))
           end
         end
@@ -310,17 +313,17 @@ module Nucleoc
   # Parallel fuzzy match across many haystacks using a shared needle.
   # Returns an array of scores in the same order as the input.
   # Uses CML-based worker pool for proper concurrent processing.
-  def self.parallel_fuzzy_match(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil) : Array(UInt16?)
+  def self.parallel_fuzzy_match(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil, timeout : Time::Span? = nil) : Array(UInt16?)
     pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
-    pool.match_many(haystacks, needle, false).first
+    pool.match_many(haystacks, needle, false, timeout).first
   end
 
   # Parallel fuzzy match with indices across many haystacks using a shared needle.
   # Returns an array of optional tuples {score, indices} in the same order as the input.
   # Uses CML-based worker pool for proper concurrent processing.
-  def self.parallel_fuzzy_indices(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+  def self.parallel_fuzzy_indices(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil, timeout : Time::Span? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
     pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
-    scores, indices = pool.match_many(haystacks, needle, true)
+    scores, indices = pool.match_many(haystacks, needle, true, timeout)
     result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
     scores.each_with_index do |score, idx|
       if score && indices
