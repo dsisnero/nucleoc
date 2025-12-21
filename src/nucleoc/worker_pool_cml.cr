@@ -128,6 +128,12 @@ module Nucleoc
             break
           end
         end
+        if remaining > 0
+          # Drain any outstanding results so workers don't block on send.
+          spawn do
+            remaining.times { response_ch.recv }
+          end
+        end
       else
         # No timeout - original behavior
         haystacks.size.times do
@@ -163,7 +169,8 @@ module Nucleoc
       end
 
       # Collect results as they arrive
-      matches = Array(SortedMatch).new(haystacks.size)
+      matches = Array(SortedMatch).new
+      received = Array(Bool).new(haystacks.size, false)
 
       if timeout
         # Use timeout event (single timeout for entire batch)
@@ -178,10 +185,21 @@ module Nucleoc
           result = CML.sync(choice)
           if result.is_a?(TaskResult)
             matches << SortedMatch.new(result.score, result.id, result.indices)
+            received[result.id] = true
             remaining -= 1
           else
             # Timeout occurred
             break
+          end
+        end
+        if remaining > 0
+          # Drain any outstanding results so workers don't block on send.
+          spawn do
+            remaining.times { response_ch.recv }
+          end
+          received.each_with_index do |was_received, idx|
+            next if was_received
+            matches << SortedMatch.new(nil, idx, nil)
           end
         end
       else
