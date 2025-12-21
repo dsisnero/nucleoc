@@ -87,28 +87,28 @@ module Nucleoc
     def score_parallel(haystacks : Array(String), matcher_config : Config) : UInt16?
       return score(haystacks, Matcher.new(matcher_config)) if columns <= 1
 
-      channels = Array(CML::Chan(Tuple(Int32, UInt16?))).new(columns)
-      columns.times { channels << CML::Chan(Tuple(Int32, UInt16?)).new }
+      result_ch = CML::Chan(Tuple(Int32, UInt16?)).new
 
       # Spawn a fiber for each column
       columns.times do |col|
-        spawn do
+        CML.spawn do
           matcher = Matcher.new(matcher_config)
           pattern = @cols[col][0]
           haystack = haystacks[col]? || ""
           column_score = pattern.match(matcher, haystack)
-          channels[col].send({col, column_score})
+          result_ch.send({col, column_score})
         end
       end
 
       # Collect results
-      total = 0_u16
-      columns.times do |col|
-        col_idx, column_score = channels[col].recv
-        return unless column_score
-        total += column_score
+      scores = Array(UInt16?).new(columns, nil)
+      columns.times do
+        col_idx, column_score = result_ch.recv
+        scores[col_idx] = column_score
       end
-      total
+      return if scores.any?(&.nil?)
+
+      scores.reduce(0_u16) { |sum, score| sum + score.as(UInt16) }
     end
 
     # Parallel matching with cancellation support using CML events.
