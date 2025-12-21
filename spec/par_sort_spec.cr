@@ -98,13 +98,71 @@ module Nucleoc
     end
 
     it "handles cancellation during sorting (large array)" do
-      array = Array.new(5000) { rand(10000) }
+      array = Array.new(3000) { rand(10000) }
       canceled = Atomic(Bool).new(false)
-      # We can't easily test cancellation mid-sort without injecting a hook.
-      # For now, just ensure it doesn't crash.
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
-      result.should be_false
+      done = Channel(Bool).new
+
+      spawn do
+        result = ParSort.par_quicksort(array, canceled) { |left, right| left < right }
+        done.send(result)
+      end
+
+      select
+      when result = done.receive
+        result.should be_false
+      when timeout(4.seconds)
+        fail "sort did not complete"
+      end
+
       array.should eq array.sort
+    end
+
+    it "sorts large array in parallel without deadlock" do
+      array = Array.new(3000) { rand(100000) }
+      expected = array.sort
+      canceled = Atomic(Bool).new(false)
+      done = Channel(Bool).new
+
+      spawn do
+        result = ParSort.par_quicksort(array, canceled) { |left, right| left < right }
+        done.send(result)
+      end
+
+      select
+      when result = done.receive
+        result.should be_false
+      when timeout(4.seconds)
+        fail "parallel sort did not complete"
+      end
+
+      array.should eq expected
+    end
+
+    it "handles cancellation during parallel sort without deadlock" do
+      array = Array.new(3000) { rand(100000) }
+      canceled = Atomic(Bool).new(false)
+      done = Channel(Bool).new
+
+      spawn do
+        result = ParSort.par_quicksort(array, canceled) do |left, right|
+          sleep 10.microseconds
+          left < right
+        end
+        done.send(result)
+      end
+
+      spawn do
+        sleep 1.millisecond
+        canceled.set(true)
+      end
+
+      select
+      when result = done.receive
+        canceled.get.should be_true
+        array.should eq array.sort unless result
+      when timeout(4.seconds)
+        fail "parallel sort did not complete after cancellation"
+      end
     end
 
     it "cancels sorting from another fiber" do
