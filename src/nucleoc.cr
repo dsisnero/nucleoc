@@ -11,6 +11,7 @@ require "./nucleoc/boxcar"
 require "./nucleoc/worker_pool"
 require "./nucleoc/worker_pool_cml"
 require "./nucleoc/api"
+require "./nucleoc/error_handling"
 
 Log.setup_from_env
 
