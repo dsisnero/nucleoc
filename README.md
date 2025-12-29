@@ -320,6 +320,40 @@ loop do
 end
 ```
 
+#### Debouncing Redraws
+
+`tick` is synchronous in this port, so avoid calling it more frequently than
+your UI needs. A common approach is to debounce redraws to ~16ms (60 FPS).
+
+```crystal
+last_tick = Time.monotonic
+loop do
+  now = Time.monotonic
+  if now - last_tick >= 16.milliseconds
+    last_tick = now
+    nucleo.pattern = "query"
+    status = nucleo.tick(0)
+    puts "changed=#{status.changed?}"
+  end
+
+  break
+end
+```
+
+#### Streaming Updates
+
+Inject items over time and call `tick` regularly to keep results up to date.
+
+```crystal
+injector = nucleo.injector
+items = ["alpha", "beta", "gamma", "delta", "epsilon"]
+
+items.each do |item|
+  injector.inject(0, item)
+  nucleo.tick(0)
+end
+```
+
 ### 9. Debugging and Logging
 
 ```crystal
