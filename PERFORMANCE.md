@@ -94,29 +94,29 @@ Notes:
 
 | Implementation | Dataset | Workers | IPS | Notes |
 | --- | --- | --- | --- | --- |
-| Crystal sequential matcher | 10000 | - | 89.53 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal spawn matcher | 10000 | - | 88.86 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber matcher | 10000 | - | 88.65 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 10000 | 1 | 89.31 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 10000 | 2 | 88.80 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 10000 | 4 | 88.49 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 10000 | 1 | 89.30 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 10000 | 2 | 88.63 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 10000 | 4 | 87.70 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal sequential matcher | 10000 | - | 89.48 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal spawn matcher | 10000 | - | 87.81 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber matcher | 10000 | - | 89.02 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 10000 | 1 | 89.52 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 10000 | 2 | 89.48 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 10000 | 4 | 88.81 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 10000 | 1 | 89.88 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 10000 | 2 | 89.74 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 10000 | 4 | 89.34 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
 
 ### Worker Pool Throughput (dataset 50000)
 
 | Implementation | Dataset | Workers | IPS | Notes |
 | --- | --- | --- | --- | --- |
-| Crystal sequential matcher | 50000 | - | 17.24 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal spawn matcher | 50000 | - | 17.44 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber matcher | 50000 | - | 17.53 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 50000 | 1 | 17.61 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 50000 | 2 | 17.54 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal fiber pool | 50000 | 4 | 17.61 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 50000 | 1 | 17.61 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 50000 | 2 | 17.65 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
-| Crystal CML pool | 50000 | 4 | 17.56 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal sequential matcher | 50000 | - | 17.93 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal spawn matcher | 50000 | - | 17.78 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber matcher | 50000 | - | 17.67 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 50000 | 1 | 17.95 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 50000 | 2 | 17.92 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal fiber pool | 50000 | 4 | 17.90 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 50000 | 1 | 17.92 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 50000 | 2 | 17.79 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
+| Crystal CML pool | 50000 | 4 | 17.70 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
 
 ### MultiPattern Concurrent Matching
 

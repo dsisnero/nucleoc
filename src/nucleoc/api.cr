@@ -5,6 +5,10 @@ require "./multi_pattern"
 
 # Main API for nucleoc fuzzy matching
 module Nucleoc
+  @@pool_mutex = Mutex.new
+  @@cml_pools = Hash({Config, Int32}, CMLWorkerPool).new
+  @@fiber_pools = Hash({Config, Int32}, FiberWorkerPool).new
+
   struct MatchResult
     include Comparable(MatchResult)
 
@@ -243,14 +247,30 @@ module Nucleoc
 
     def match_list(items : Array(String), pattern : String) : Array(MatchResult)
       matcher = Matcher.new(@matcher.config)
+      pattern_stripped = pattern.strip
+      max_results = @max_results
+      if pattern_stripped.empty?
+        limit = max_results && max_results > 0 ? max_results : items.size
+        results = Array(MatchResult).new(limit)
+        items.first(limit).each do |item|
+          results << MatchResult.new(item, 0_u16)
+        end
+        return results
+      end
+
       pat = Pattern.parse(pattern)
-      vector = BoxcarVector(MatchResult).new
+      vector = BoxcarVector(MatchResult).new(items.size)
       items.each do |item|
         if score = pat.match(matcher, item)
           vector.push(MatchResult.new(item, score))
         end
       end
-      vector.sort_snapshot { |a, b| a < b }
+
+      if max_results && max_results > 0
+        vector.top_k_snapshot(max_results) { |a, b| a < b }
+      else
+        vector.sort_snapshot { |a, b| a < b }
+      end
     end
 
     def pattern=(pattern_str : String)
@@ -415,7 +435,12 @@ module Nucleoc
     case choose_parallel_strategy(haystacks.size, strategy)
     when :sequential
       matcher = Matcher.new(config)
-      haystacks.map { |haystack| matcher.fuzzy_match(haystack, needle) }
+      normalized_needle = matcher.normalize_needle(needle)
+      scores = Array(UInt16?).new(haystacks.size, nil)
+      haystacks.each_with_index do |haystack, idx|
+        scores[idx] = matcher.fuzzy_match_normalized(haystack, normalized_needle)
+      end
+      scores
     when :fiber
       matcher = Matcher.new(config)
       matcher.parallel_fuzzy_match_fiber(haystacks, needle)
@@ -423,13 +448,13 @@ module Nucleoc
       matcher = Matcher.new(config)
       matcher.parallel_fuzzy_match(haystacks, needle)
     when :fiber_pool
-      pool = FiberWorkerPool.new(workers || FiberWorkerPool.default_size, config)
+      pool = fiber_pool(config, workers)
       pool.match_many(haystacks, needle, false).first
     when :cml_pool, :pool
-      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool = cml_pool(config, workers, error_handler)
       pool.match_many(haystacks, needle, false, timeout).first
     else
-      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool = cml_pool(config, workers, error_handler)
       pool.match_many(haystacks, needle, false, timeout).first
     end
   end
@@ -451,11 +476,14 @@ module Nucleoc
     case choose_parallel_strategy(haystacks.size, strategy)
     when :sequential
       matcher = Matcher.new(config)
-      haystacks.map do |haystack|
+      normalized_needle = matcher.normalize_needle(needle)
+      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      haystacks.each_with_index do |haystack, idx|
         indices = [] of UInt32
-        score = matcher.fuzzy_indices(haystack, needle, indices)
-        score ? {score, indices} : nil
+        score = matcher.fuzzy_indices_normalized(haystack, normalized_needle, indices)
+        results[idx] = score ? {score, indices} : nil
       end
+      results
     when :fiber
       matcher = Matcher.new(config)
       matcher.parallel_fuzzy_indices_fiber(haystacks, needle)
@@ -463,7 +491,7 @@ module Nucleoc
       matcher = Matcher.new(config)
       matcher.parallel_fuzzy_indices(haystacks, needle)
     when :fiber_pool
-      pool = FiberWorkerPool.new(workers || FiberWorkerPool.default_size, config)
+      pool = fiber_pool(config, workers)
       scores, indices = pool.match_many(haystacks, needle, true)
       result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
       scores.each_with_index do |score, idx|
@@ -473,7 +501,7 @@ module Nucleoc
       end
       result
     when :cml_pool, :pool
-      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool = cml_pool(config, workers, error_handler)
       scores, indices = pool.match_many(haystacks, needle, true, timeout)
       result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
       scores.each_with_index do |score, idx|
@@ -484,7 +512,7 @@ module Nucleoc
       end
       result
     else
-      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool = cml_pool(config, workers, error_handler)
       scores, indices = pool.match_many(haystacks, needle, true, timeout)
       result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
       scores.each_with_index do |score, idx|
@@ -521,6 +549,24 @@ module Nucleoc
     return :spawn if count < cpu * 2048
     return :fiber_pool if count < cpu * 8192
     :cml_pool
+  end
+
+  private def self.cml_pool(config : Config, workers : Int32?, error_handler : Proc(ErrorHandling::WorkerError, Nil)?) : CMLWorkerPool
+    pool_size = workers || CMLWorkerPool.default_size
+    return CMLWorkerPool.new(pool_size, config, error_handler) if error_handler
+
+    key = {config, pool_size}
+    @@pool_mutex.synchronize do
+      @@cml_pools[key] ||= CMLWorkerPool.new(pool_size, config, nil)
+    end
+  end
+
+  private def self.fiber_pool(config : Config, workers : Int32?) : FiberWorkerPool
+    pool_size = workers || FiberWorkerPool.default_size
+    key = {config, pool_size}
+    @@pool_mutex.synchronize do
+      @@fiber_pools[key] ||= FiberWorkerPool.new(pool_size, config)
+    end
   end
 
   def self.substring_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?

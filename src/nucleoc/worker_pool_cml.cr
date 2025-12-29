@@ -35,19 +35,11 @@ module Nucleoc
       getter haystacks : Array(String)
       getter needle : String
       getter? compute_indices : Bool
-      getter reply_channel : CML::Mailbox(BatchTaskResult)
-
-      def initialize(@start_idx, @haystacks, @needle, @compute_indices, @reply_channel)
-      end
-    end
-
-    # Result from a batch worker
-    private struct BatchTaskResult
-      getter start_idx : Int32
       getter scores : Array(UInt16?)
       getter indices : Array(Array(UInt32)?)?
+      getter reply_channel : CML::Mailbox(Int32)
 
-      def initialize(@start_idx, @scores, @indices)
+      def initialize(@start_idx, @haystacks, @needle, @compute_indices, @scores, @indices, @reply_channel)
       end
     end
 
@@ -70,6 +62,8 @@ module Nucleoc
       def initialize(@score, @id, @indices)
       end
     end
+
+    private EMPTY_INDICES = [] of UInt32
 
     def initialize(size : Int32 = CMLWorkerPool.default_size, @config : Config = Config::DEFAULT, @error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil)
       @size = size > 0 ? size : 1
@@ -206,25 +200,27 @@ module Nucleoc
                           matcher.fuzzy_match_normalized(task.haystack, task.needle)
                         end
 
-                indices = task.compute_indices? ? indices_buffer.dup : nil
+                indices = if task.compute_indices?
+                            score ? indices_buffer.dup : EMPTY_INDICES
+                          else
+                            nil
+                          end
                 task.reply_channel.send(TaskResult.new(task.id, score, indices))
               when BatchTask
                 # Process batch using parallel matcher for intra-task parallelism
-                scores = Array(UInt16?).new(task.haystacks.size, nil)
-                indices = task.compute_indices? ? Array(Array(UInt32)?).new(task.haystacks.size, nil) : nil
-
                 task.haystacks.each_with_index do |haystack, idx|
+                  target_idx = task.start_idx + idx
                   if task.compute_indices?
                     indices_buffer.clear
                     score = matcher.fuzzy_indices_normalized(haystack, task.needle, indices_buffer)
-                    scores[idx] = score
-                    indices.not_nil![idx] = indices_buffer.dup
+                    task.scores[target_idx] = score
+                    task.indices.not_nil![target_idx] = score ? indices_buffer.dup : EMPTY_INDICES
                   else
-                    scores[idx] = matcher.fuzzy_match_normalized(haystack, task.needle)
+                    task.scores[target_idx] = matcher.fuzzy_match_normalized(haystack, task.needle)
                   end
                 end
 
-                task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, indices))
+                task.reply_channel.send(task.start_idx)
               end
             rescue ex
               # Log the error and send a failure result
@@ -249,10 +245,12 @@ module Nucleoc
                 # Send nil result to indicate failure
                 task.reply_channel.send(TaskResult.new(task.id, nil, nil))
               when BatchTask
-                # Send nil scores for all items in batch
-                nil_scores = Array(UInt16?).new(task.haystacks.size, nil)
-                nil_indices = task.compute_indices? ? Array(Array(UInt32)?).new(task.haystacks.size, nil) : nil
-                task.reply_channel.send(BatchTaskResult.new(task.start_idx, nil_scores, nil_indices))
+                task.haystacks.size.times do |idx|
+                  target_idx = task.start_idx + idx
+                  task.scores[target_idx] = nil
+                  task.indices.try { |vals| vals[target_idx] = EMPTY_INDICES }
+                end
+                task.reply_channel.send(task.start_idx)
               end
             end
           end
@@ -271,37 +269,29 @@ module Nucleoc
     end
 
     private def collect_batch_results(haystacks : Array(String), needle : String, compute_indices : Bool, timeout : Time::Span?) : {Array(UInt16?), Array(Array(UInt32)?)?}
-      response_ch = CML::Mailbox(BatchTaskResult).new
+      response_ch = CML::Mailbox(Int32).new
       chunk_size = chunk_size_for(haystacks.size)
       chunk_count = (haystacks.size + chunk_size - 1) // chunk_size
       normalized_needle = normalize_needle(needle)
 
+      scores = Array(UInt16?).new(haystacks.size, nil)
+      indices = compute_indices ? Array(Array(UInt32)?).new(haystacks.size, nil) : nil
+
       haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
         start_idx = chunk_idx * chunk_size
-        task = BatchTask.new(start_idx, slice, normalized_needle, compute_indices, response_ch)
+        task = BatchTask.new(start_idx, slice, normalized_needle, compute_indices, scores, indices, response_ch)
         worker_idx = chunk_idx % @size
         @workers[worker_idx].send(task)
       end
 
-      scores = Array(UInt16?).new(haystacks.size, nil)
-      indices = compute_indices ? Array(Array(UInt32)?).new(haystacks.size, nil) : nil
-
       if timeout
-        timeout_evt = CML.wrap(CML.timeout(timeout.as(Time::Span))) { :timeout.as(BatchTaskResult | Symbol) }
+        timeout_evt = CML.wrap(CML.timeout(timeout.as(Time::Span))) { :timeout.as(Int32 | Symbol) }
         remaining = chunk_count
         while remaining > 0
-          recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(BatchTaskResult | Symbol) }
+          recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(Int32 | Symbol) }
           result = CML.sync(CML.choose([recv_evt, timeout_evt]))
 
-          if result.is_a?(BatchTaskResult)
-            result.scores.each_with_index do |score, idx|
-              scores[result.start_idx + idx] = score
-            end
-            if compute_indices && indices && result.indices
-              result.indices.as(Array(Array(UInt32)?)).each_with_index do |idx_list, idx|
-                indices[result.start_idx + idx] = idx_list
-              end
-            end
+          if result.is_a?(Int32)
             remaining -= 1
           else
             break
@@ -310,15 +300,7 @@ module Nucleoc
         remaining.times { response_ch.recv } if remaining > 0
       else
         chunk_count.times do
-          result = response_ch.recv
-          result.scores.each_with_index do |score, idx|
-            scores[result.start_idx + idx] = score
-          end
-          if compute_indices && indices && result.indices
-            result.indices.as(Array(Array(UInt32)?)).each_with_index do |idx_list, idx|
-              indices[result.start_idx + idx] = idx_list
-            end
-          end
+          response_ch.recv
         end
       end
 
