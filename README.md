@@ -460,6 +460,22 @@ crystal tool format src/ spec/
 ameba
 ```
 
+## Benchmarks
+
+Benchmark harnesses live under `bench/`. Run with `--release` for meaningful results:
+
+```bash
+CRYSTAL_CACHE_DIR=.crystal-cache crystal run bench/src/main.cr --release -- all
+```
+
+To target specific benchmarks or tune the dataset:
+
+```bash
+BENCH_DATASET=20000 BENCH_CORES=1,2,4 crystal run bench/src/main.cr --release -- worker_pool
+```
+
+See `PERFORMANCE.md` for how to capture results and compare against Rust nucleo benchmarks.
+
 ## Contributing
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
