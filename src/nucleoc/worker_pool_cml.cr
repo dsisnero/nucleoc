@@ -13,6 +13,8 @@ module Nucleoc
     @workers : Array(CML::Chan(WorkerTask))
     @circuit_breaker : ErrorHandling::CircuitBreaker
     @supervisor : ErrorHandling::Supervisor
+    @error_mailbox : CML::Mailbox(ErrorHandling::WorkerError)
+    @error_handler : Proc(ErrorHandling::WorkerError, Nil)?
 
     # Task for a worker to process
     private struct Task
@@ -68,13 +70,18 @@ module Nucleoc
       end
     end
 
-    def initialize(size : Int32 = CMLWorkerPool.default_size, @config : Config = Config::DEFAULT)
+    def initialize(size : Int32 = CMLWorkerPool.default_size, @config : Config = Config::DEFAULT, @error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil)
       @size = size > 0 ? size : 1
       @workers = Array.new(@size) { CML::Chan(WorkerTask).new }
       @circuit_breaker = ErrorHandling::CircuitBreaker.new
       @supervisor = ErrorHandling::Supervisor.new
+      @error_mailbox = CML::Mailbox(ErrorHandling::WorkerError).new
       start_workers
       @supervisor.start
+    end
+
+    def error_mailbox : CML::Mailbox(ErrorHandling::WorkerError)
+      @error_mailbox
     end
 
     def self.default_size : Int32
@@ -373,6 +380,20 @@ module Nucleoc
             rescue ex
               # Log the error and send a failure result
               Log.error(exception: ex) { "Worker #{worker_idx} failed processing task: #{ex.message}" }
+              worker_error = case task
+                             when Task
+                               ErrorHandling::WorkerError.new(worker_idx, ex, task.id, nil)
+                             when BatchTask
+                               ErrorHandling::WorkerError.new(worker_idx, ex, nil, task.start_idx)
+                             else
+                               ErrorHandling::WorkerError.new(worker_idx, ex)
+                             end
+              @error_mailbox.send(worker_error)
+              begin
+                @error_handler.try(&.call(worker_error))
+              rescue handler_ex
+                Log.error(exception: handler_ex) { "Worker error handler failed: #{handler_ex.message}" }
+              end
 
               case task
               when Task

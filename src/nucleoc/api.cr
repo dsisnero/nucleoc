@@ -1,5 +1,6 @@
 require "cml"
 require "./boxcar"
+require "./error_handling"
 require "./multi_pattern"
 
 # Main API for nucleoc fuzzy matching
@@ -313,16 +314,30 @@ module Nucleoc
   # Parallel fuzzy match across many haystacks using a shared needle.
   # Returns an array of scores in the same order as the input.
   # Uses CML-based worker pool for proper concurrent processing.
-  def self.parallel_fuzzy_match(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil, timeout : Time::Span? = nil) : Array(UInt16?)
-    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
+  def self.parallel_fuzzy_match(
+    haystacks : Array(String),
+    needle : String,
+    config : Config = Config.new,
+    workers : Int32? = nil,
+    timeout : Time::Span? = nil,
+    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil
+  ) : Array(UInt16?)
+    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
     pool.match_many(haystacks, needle, false, timeout).first
   end
 
   # Parallel fuzzy match with indices across many haystacks using a shared needle.
   # Returns an array of optional tuples {score, indices} in the same order as the input.
   # Uses CML-based worker pool for proper concurrent processing.
-  def self.parallel_fuzzy_indices(haystacks : Array(String), needle : String, config : Config = Config.new, workers : Int32? = nil, timeout : Time::Span? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
-    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config)
+  def self.parallel_fuzzy_indices(
+    haystacks : Array(String),
+    needle : String,
+    config : Config = Config.new,
+    workers : Int32? = nil,
+    timeout : Time::Span? = nil,
+    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil
+  ) : Array(Tuple(UInt16, Array(UInt32))?)
+    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
     scores, indices = pool.match_many(haystacks, needle, true, timeout)
     result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
     scores.each_with_index do |score, idx|

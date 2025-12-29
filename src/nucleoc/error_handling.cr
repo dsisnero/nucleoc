@@ -5,6 +5,17 @@ require "atomic"
 module Nucleoc
   # Error handling patterns using CML.wrap_handler
   module ErrorHandling
+    # Error report for worker failures.
+    struct WorkerError
+      getter worker_id : Int32
+      getter exception : Exception
+      getter task_id : Int32?
+      getter batch_start_idx : Int32?
+
+      def initialize(@worker_id, @exception, @task_id = nil, @batch_start_idx = nil)
+      end
+    end
+
     # Wraps an event with exception handling using CML.wrap_handler
     # Returns an event that either yields the original result or a fallback value
     # if an exception occurs during event execution.
@@ -18,23 +29,38 @@ module Nucleoc
     # Wraps an event with exception handling and returns a union type
     # that includes either the result or the exception.
     # Useful when you need to propagate errors rather than swallow them.
-    # TODO: Fix type issue with CML.wrap_handler - currently returns Event(T?) instead of Event(T | Exception)
     def self.with_error_propagation(evt : CML::Event(T)) : CML::Event(T | Exception) forall T
-      # Temporary implementation: use wrap_handler and return nil on error
-      # Caller should check for nil (error)
-      # This is not ideal but works within CML type constraints
-      CML.wrap_handler(evt) do |ex|
+      union_evt = CML.wrap(evt) { |value| value.as(T | Exception) }
+      CML.wrap_handler(union_evt) do |ex|
         Log.error { "Error in event execution: #{ex.message}" }
-        nil.as(T | Exception)
+        ex.as(T | Exception)
       end
     end
 
     # Creates an event that retries another event up to max_attempts times
     # with exponential backoff between attempts.
     # The retry event returns the successful result or the last exception.
-    def self.with_retry(evt : -> CML::Event(T), max_attempts : Int32 = 3, base_delay : Time::Span = 100.milliseconds) : CML::Event(T | Exception) forall T
-      # TODO: Implement proper retry logic with CML event composition
-      with_error_propagation(evt.call)
+    # Provide a type hint so the retry event has a stable result type.
+    def self.with_retry(type : T.class, max_attempts : Int32 = 3, base_delay : Time::Span = 100.milliseconds, &evt : -> CML::Event(T)) : CML::Event(T | Exception) forall T
+      CML.guard do
+        attempts = 0
+        last_ex = nil.as(Exception?)
+
+        loop do
+          attempts += 1
+          begin
+            inner_evt = evt.call
+            result = CML.sync(inner_evt)
+            break CML.always(result.as(T | Exception))
+          rescue ex
+            last_ex = ex
+            if attempts >= max_attempts
+              break CML.always(last_ex.not_nil!.as(T | Exception))
+            end
+            sleep base_delay * (2 ** (attempts - 1))
+          end
+        end
+      end
     end
 
     # Circuit breaker pattern for rate limiting failing operations
@@ -55,7 +81,7 @@ module Nucleoc
       end
 
       # Executes an operation through the circuit breaker
-      def call(operation : -> T) : T? forall T
+      def call(operation)
         case current_state
         when :open
           return # Fast fail
@@ -128,13 +154,13 @@ module Nucleoc
       @workers = [] of CML::Chan(WorkerCommand)
       @supervisor_ch = CML::Chan(SupervisorMessage).new
 
-      private enum WorkerCommand
+      enum WorkerCommand
         Stop
         Restart
         Status
       end
 
-      private struct SupervisorMessage
+      struct SupervisorMessage
         getter worker_id : Int32
         getter status : Symbol
         getter exception : Exception?
@@ -151,8 +177,24 @@ module Nucleoc
         spawn do
           restart_count = 0
           max_restarts = 3
+          stop_requested = Atomic(Bool).new(false)
+
+          spawn do
+            loop do
+              cmd = control_ch.recv
+              case cmd
+              when WorkerCommand::Stop
+                stop_requested.set(true)
+                break
+              when WorkerCommand::Restart
+                stop_requested.set(true)
+              when WorkerCommand::Status
+              end
+            end
+          end
 
           loop do
+            break if stop_requested.get
             begin
               worker.call
               # Worker exited normally (shouldn't happen for long-running workers)
