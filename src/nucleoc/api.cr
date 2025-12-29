@@ -40,6 +40,7 @@ module Nucleoc
   class Injector(T)
     def initialize(@owner : Nucleo(T), @generation : Int32)
       @owner.register_injector(@generation)
+      GC.add_finalizer(self)
     end
 
     def finalize
