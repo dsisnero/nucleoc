@@ -291,7 +291,36 @@ score = pattern.score(haystacks, matcher)
 puts score
 ```
 
-### 8. Debugging and Logging
+### 8. UI Tick Loop Usage
+
+The high-level Nucleo API is designed to be called from your UI loop. Each UI
+tick updates the pattern, calls `tick`, and reads the latest snapshot. In this
+Crystal port, `tick` runs synchronously, so choose an appropriate call cadence.
+
+```crystal
+config = Nucleoc::Config.new
+nucleo = Nucleoc::Nucleo(Int32).new(config, -> { nil }, 1, 1)
+injector = nucleo.injector
+injector.extend(["alpha", "beta", "gamma", "delta"])
+
+loop do
+  # Replace this with your input handling
+  query = "ga"
+  nucleo.pattern = query
+
+  status = nucleo.tick(0)
+  if status.changed?
+    snapshot = nucleo.match
+    snapshot.items.each do |match|
+      puts "#{match.item}: #{match.score}"
+    end
+  end
+
+  break
+end
+```
+
+### 9. Debugging and Logging
 
 ```crystal
 # Enable debug logging
@@ -305,7 +334,7 @@ score = matcher.fuzzy_match("hello world", "hlo")
 # LOG_LEVEL=DEBUG crystal run your_script.cr
 ```
 
-### 9. Performance Tips
+### 10. Performance Tips
 
 1. **Reuse Matchers**: Create matcher once and reuse for multiple matches
 2. **Use Appropriate Algorithm**: Choose exact/substring when possible instead of fuzzy
@@ -313,7 +342,7 @@ score = matcher.fuzzy_match("hello world", "hlo")
 4. **Pre-compile Patterns**: Parse patterns once and reuse
 5. **Configure Delimiters**: Set appropriate `delimiter_chars` for your use case
 
-### 10. Common Use Cases
+### 11. Common Use Cases
 
 #### File Search
 ```crystal
