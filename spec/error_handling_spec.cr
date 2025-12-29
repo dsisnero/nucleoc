@@ -48,7 +48,7 @@ describe Nucleoc::ErrorHandling do
         attempts += 1
         CML.always("success")
       }
-      retry_evt = Nucleoc::ErrorHandling.with_retry(evt, max_attempts: 3)
+      retry_evt = Nucleoc::ErrorHandling.with_retry(String, max_attempts: 3) { evt.call }
       result = CML.sync(retry_evt)
       result.should eq("success")
       attempts.should eq(1)
@@ -64,7 +64,7 @@ describe Nucleoc::ErrorHandling do
           CML.always("success")
         end
       }
-      retry_evt = Nucleoc::ErrorHandling.with_retry(evt, max_attempts: 3, base_delay: 10.milliseconds)
+      retry_evt = Nucleoc::ErrorHandling.with_retry(String, max_attempts: 3, base_delay: 10.milliseconds) { evt.call }
       result = CML.sync(retry_evt)
       result.should eq("success")
       attempts.should eq(2)
@@ -76,7 +76,7 @@ describe Nucleoc::ErrorHandling do
         attempts += 1
         raise "Always fails"
       }
-      retry_evt = Nucleoc::ErrorHandling.with_retry(evt, max_attempts: 2, base_delay: 10.milliseconds)
+      retry_evt = Nucleoc::ErrorHandling.with_retry(String, max_attempts: 2, base_delay: 10.milliseconds) { evt.call }
       result = CML.sync(retry_evt)
       result.should be_a(Exception)
       result.as(Exception).message.should eq("Always fails")
@@ -109,7 +109,7 @@ describe Nucleoc::ErrorHandling do
         cb.call(-> { raise "Fail" })
       end
       # Wait for reset timeout
-      sleep 0.1
+      sleep 0.1.seconds
       # Circuit should be half-open or closed, allow one trial
       result = cb.call(-> { 42 })
       result.should eq(42)
@@ -135,7 +135,7 @@ describe Nucleoc::ErrorHandling do
         if crash_count <= max_crashes
           raise "Crash #{crash_count}"
         else
-          loop { sleep 1 } # Normal operation
+          loop { sleep 1.second } # Normal operation
         end
       }
 
@@ -143,7 +143,7 @@ describe Nucleoc::ErrorHandling do
       supervisor.start
 
       # Wait for crashes and restarts
-      sleep 0.3
+      sleep 0.3.seconds
 
       # Worker should have been restarted multiple times
       crash_count.should be >= 2
