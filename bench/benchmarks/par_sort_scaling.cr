@@ -3,7 +3,7 @@ require "./support"
 module NucleocBench
   module ParSortScaling
     def self.run(config : Config)
-      report_header("ParSort scaling", config)
+      NucleocBench.report_header("ParSort scaling", config)
       rng = Random.new(1234)
       base_arrays = config.sort_sizes.map do |size|
         Array.new(size) { rng.rand(1_000_000) }

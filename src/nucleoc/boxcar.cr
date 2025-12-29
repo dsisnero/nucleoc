@@ -121,9 +121,53 @@ module Nucleoc
     def sort_snapshot(start_index : Int64 = 0, &is_less : T, T -> Bool) : Array(T)
       snapshot = self.snapshot(start_index)
       array = snapshot.to_a
-      canceled = Atomic(Bool).new(false)
-      ParSort.par_quicksort(array, canceled, &is_less)
+      if array.size <= 2048
+        array.sort! do |a, b|
+          if is_less.call(a, b)
+            -1
+          elsif is_less.call(b, a)
+            1
+          else
+            0
+          end
+        end
+      else
+        canceled = Atomic(Bool).new(false)
+        ParSort.par_quicksort(array, canceled, &is_less)
+      end
       array
+    end
+
+    # Select the top-K elements without sorting the full snapshot.
+    # Returns a new sorted array of at most K elements.
+    def top_k_snapshot(k : Int32, start_index : Int64 = 0, &is_less : T, T -> Bool) : Array(T)
+      return [] of T if k <= 0
+
+      snapshot = self.snapshot(start_index)
+      heap = [] of T
+
+      snapshot.each do |value|
+        if heap.size < k
+          heap << value
+          heap_sift_up(heap, (heap.size - 1).to_i32, &is_less)
+        else
+          if is_less.call(value, heap[0])
+            heap[0] = value
+            heap_sift_down(heap, 0, &is_less)
+          end
+        end
+      end
+
+      heap.sort! do |a, b|
+        if is_less.call(a, b)
+          -1
+        elsif is_less.call(b, a)
+          1
+        else
+          0
+        end
+      end
+      heap
     end
 
     # Clear all elements (for reuse).
@@ -179,6 +223,41 @@ module Nucleoc
       @bucket_mutexes[bucket_idx].synchronize do
         unless @buckets[bucket_idx]?
           @buckets[bucket_idx] = Array(T?).new(BUCKET_SIZES[bucket_idx], nil)
+        end
+      end
+    end
+
+    private def heap_sift_up(heap : Array(T), idx : Int32, &is_less : T, T -> Bool) : Nil
+      current = idx
+      while current > 0
+        parent = (current - 1) // 2
+        if is_less.call(heap[parent], heap[current])
+          heap[parent], heap[current] = heap[current], heap[parent]
+          current = parent
+        else
+          break
+        end
+      end
+    end
+
+    private def heap_sift_down(heap : Array(T), idx : Int32, &is_less : T, T -> Bool) : Nil
+      size = heap.size
+      current = idx
+      loop do
+        left = current * 2 + 1
+        right = left + 1
+        break if left >= size
+
+        worst_child = left
+        if right < size && is_less.call(heap[left], heap[right])
+          worst_child = right
+        end
+
+        if is_less.call(heap[current], heap[worst_child])
+          heap[current], heap[worst_child] = heap[worst_child], heap[current]
+          current = worst_child
+        else
+          break
         end
       end
     end

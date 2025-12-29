@@ -12,6 +12,7 @@ module NucleocBench
     getter calculation : Time::Span
     getter core_counts : Array(Int32)
     getter sort_sizes : Array(Int32)
+    getter top_k : Int32
 
     def initialize(
       @dataset_size : Int32,
@@ -22,12 +23,13 @@ module NucleocBench
       @calculation : Time::Span,
       @core_counts : Array(Int32),
       @sort_sizes : Array(Int32),
+      @top_k : Int32,
     )
     end
   end
 
   def self.config : Config
-    @config ||= Config.new(
+    @@config ||= Config.new(
       dataset_size: env_int("BENCH_DATASET", 10_000),
       haystack_size: env_int("BENCH_HAYSTACK", 64),
       columns: env_int("BENCH_COLUMNS", 3),
@@ -35,7 +37,8 @@ module NucleocBench
       warmup: env_seconds("BENCH_WARMUP", 2.0),
       calculation: env_seconds("BENCH_CALC", 5.0),
       core_counts: env_int_list("BENCH_CORES", [1, 2, 4]),
-      sort_sizes: env_int_list("BENCH_SORT_SIZES", [1_000, 10_000, 100_000])
+      sort_sizes: env_int_list("BENCH_SORT_SIZES", [1_000, 10_000, 100_000]),
+      top_k: env_int("BENCH_TOPK", 100),
     )
   end
 
@@ -72,6 +75,7 @@ module NucleocBench
     puts "\n== #{title} =="
     puts "dataset=#{config.dataset_size} haystack=#{config.haystack_size} columns=#{config.columns}"
     puts "cores=#{config.core_counts.join(",")} sort_sizes=#{config.sort_sizes.join(",")}"
+    puts "top_k=#{config.top_k}"
     puts "crystal_workers=#{ENV["CRYSTAL_WORKERS"]? || "default"}"
   end
 

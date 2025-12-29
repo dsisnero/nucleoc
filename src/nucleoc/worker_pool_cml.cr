@@ -10,11 +10,12 @@ module Nucleoc
     getter config : Config
 
     private alias WorkerTask = Task | BatchTask
-    @workers : Array(CML::Chan(WorkerTask))
+    @workers : Array(CML::Mailbox(WorkerTask))
     @circuit_breaker : ErrorHandling::CircuitBreaker
     @supervisor : ErrorHandling::Supervisor
     @error_mailbox : CML::Mailbox(ErrorHandling::WorkerError)
     @error_handler : Proc(ErrorHandling::WorkerError, Nil)?
+    @next_worker : Atomic(Int32)
 
     # Task for a worker to process
     private struct Task
@@ -22,7 +23,7 @@ module Nucleoc
       getter haystack : String
       getter needle : String
       getter? compute_indices : Bool
-      getter reply_channel : CML::Chan(TaskResult)
+      getter reply_channel : CML::Mailbox(TaskResult)
 
       def initialize(@id, @haystack, @needle, @compute_indices, @reply_channel)
       end
@@ -34,7 +35,7 @@ module Nucleoc
       getter haystacks : Array(String)
       getter needle : String
       getter? compute_indices : Bool
-      getter reply_channel : CML::Chan(BatchTaskResult)
+      getter reply_channel : CML::Mailbox(BatchTaskResult)
 
       def initialize(@start_idx, @haystacks, @needle, @compute_indices, @reply_channel)
       end
@@ -72,10 +73,11 @@ module Nucleoc
 
     def initialize(size : Int32 = CMLWorkerPool.default_size, @config : Config = Config::DEFAULT, @error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil)
       @size = size > 0 ? size : 1
-      @workers = Array.new(@size) { CML::Chan(WorkerTask).new }
+      @workers = Array.new(@size) { CML::Mailbox(WorkerTask).new }
       @circuit_breaker = ErrorHandling::CircuitBreaker.new
       @supervisor = ErrorHandling::Supervisor.new
       @error_mailbox = CML::Mailbox(ErrorHandling::WorkerError).new
+      @next_worker = Atomic(Int32).new(0)
       start_workers
       @supervisor.start
     end
@@ -95,64 +97,7 @@ module Nucleoc
     def match_many(haystacks : Array(String), needle : String, compute_indices : Bool = false, timeout : Time::Span? = nil) : {Array(UInt16?), Array(Array(UInt32)?)?}
       return {[] of UInt16?, nil} if haystacks.empty?
 
-      # Create a response channel for this batch
-      response_ch = CML::Chan(TaskResult).new
-
-      # Submit tasks in a separate fiber to avoid deadlock
-      spawn do
-        haystacks.each_with_index do |haystack, idx|
-          task = Task.new(idx, haystack, needle, compute_indices, response_ch)
-
-          # Simple round-robin distribution
-          worker_idx = idx % @size
-          @workers[worker_idx].send(task)
-        end
-      end
-
-      # Collect results as they arrive
-      scores = Array(UInt16?).new(haystacks.size, nil)
-      indices = compute_indices ? Array(Array(UInt32)?).new(haystacks.size, nil) : nil
-
-      if timeout
-        # Use timeout event (single timeout for entire batch)
-        timeout_evt = CML.wrap(CML.timeout(timeout.as(Time::Span))) { :timeout.as(TaskResult | Symbol) }
-        remaining = haystacks.size
-        while remaining > 0
-          # Create new receive event each iteration (events are one-shot)
-          recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(TaskResult | Symbol) }
-          # Create choice between receiving next result and timeout
-          choice = CML.choose([recv_evt, timeout_evt])
-
-          result = CML.sync(choice)
-          if result.is_a?(TaskResult)
-            scores[result.id] = result.score
-            if compute_indices && indices
-              indices[result.id] = result.indices
-            end
-            remaining -= 1
-          else
-            # Timeout occurred
-            break
-          end
-        end
-        if remaining > 0
-          # Drain any outstanding results so workers don't block on send.
-          spawn do
-            remaining.times { response_ch.recv }
-          end
-        end
-      else
-        # No timeout - original behavior
-        haystacks.size.times do
-          result = response_ch.recv
-          scores[result.id] = result.score
-          if compute_indices && indices
-            indices[result.id] = result.indices
-          end
-        end
-      end
-
-      {scores, indices}
+      collect_batch_results(haystacks, needle, compute_indices, timeout)
     end
 
     # Submit a batch of haystacks to match against a single needle,
@@ -161,60 +106,9 @@ module Nucleoc
     def match_many_sorted(haystacks : Array(String), needle : String, compute_indices : Bool = false, cancelled : Atomic(Bool)? = nil, timeout : Time::Span? = nil) : {Array(UInt16?), Array(Array(UInt32)?)?}
       return {[] of UInt16?, nil} if haystacks.empty?
 
-      # Create a response channel for this batch
-      response_ch = CML::Chan(TaskResult).new
-
-      # Submit tasks in a separate fiber to avoid deadlock
-      spawn do
-        haystacks.each_with_index do |haystack, idx|
-          task = Task.new(idx, haystack, needle, compute_indices, response_ch)
-
-          # Simple round-robin distribution
-          worker_idx = idx % @size
-          @workers[worker_idx].send(task)
-        end
-      end
-
-      # Collect results as they arrive
-      matches = Array(SortedMatch).new
-      received = Array(Bool).new(haystacks.size, false)
-
-      if timeout
-        # Use timeout event (single timeout for entire batch)
-        timeout_evt = CML.wrap(CML.timeout(timeout.as(Time::Span))) { :timeout.as(TaskResult | Symbol) }
-        remaining = haystacks.size
-        while remaining > 0
-          # Create new receive event each iteration (events are one-shot)
-          recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(TaskResult | Symbol) }
-          # Create choice between receiving next result and timeout
-          choice = CML.choose([recv_evt, timeout_evt])
-
-          result = CML.sync(choice)
-          if result.is_a?(TaskResult)
-            matches << SortedMatch.new(result.score, result.id, result.indices)
-            received[result.id] = true
-            remaining -= 1
-          else
-            # Timeout occurred
-            break
-          end
-        end
-        if remaining > 0
-          # Drain any outstanding results so workers don't block on send.
-          spawn do
-            remaining.times { response_ch.recv }
-          end
-          received.each_with_index do |was_received, idx|
-            next if was_received
-            matches << SortedMatch.new(nil, idx, nil)
-          end
-        end
-      else
-        # No timeout - original behavior
-        haystacks.size.times do
-          result = response_ch.recv
-          matches << SortedMatch.new(result.score, result.id, result.indices)
-        end
+      scores, indices = collect_batch_results(haystacks, needle, compute_indices, timeout)
+      matches = Array(SortedMatch).new(haystacks.size) do |idx|
+        SortedMatch.new(scores[idx], idx, indices ? indices[idx] : nil)
       end
 
       # Sort matches using parallel quicksort
@@ -252,74 +146,23 @@ module Nucleoc
 
     # Submit a batch of haystacks using chunked distribution and intra-worker parallelism
     def match_many_batch(haystacks : Array(String), needle : String, compute_indices : Bool = false) : {Array(UInt16?), Array(Array(UInt32)?)?}
-      return {[] of UInt16?, nil} if haystacks.empty?
-
-      # Split haystacks into chunks (one per worker)
-      chunk_size = (haystacks.size + @size - 1) // @size # ceiling division
-      channels = [] of CML::Chan(BatchTaskResult)
-
-      # Distribute chunks to workers
-      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
-        start_idx = chunk_idx * chunk_size
-        chan = CML::Chan(BatchTaskResult).new
-        channels << chan
-
-        batch_task = BatchTask.new(start_idx, slice, needle, compute_indices, chan)
-        # Send to worker using round-robin
-        worker_idx = chunk_idx % @size
-        @workers[worker_idx].send(batch_task)
-      end
-
-      # Collect results
-      scores = Array(UInt16?).new(haystacks.size, nil)
-      indices = compute_indices ? Array(Array(UInt32)?).new(haystacks.size, nil) : nil
-
-      channels.each do |chan|
-        result = chan.recv
-        result.scores.each_with_index do |score, idx|
-          scores[result.start_idx + idx] = score
-        end
-        if compute_indices && indices && result.indices
-          result.indices.as(Array(Array(UInt32)?)).each_with_index do |idx_list, idx|
-            indices[result.start_idx + idx] = idx_list
-          end
-        end
-      end
-
-      {scores, indices}
+      match_many(haystacks, needle, compute_indices)
     end
 
     # Submit single match with timeout using CML.choose
     def match_with_timeout(haystack : String, needle : String, timeout : Time::Span = 5.seconds, compute_indices : Bool = false) : {UInt16?, Array(UInt32)?}
-      response_ch = CML::Chan(TaskResult).new
-      task = Task.new(0, haystack, needle, compute_indices, response_ch)
+      response_ch = CML::Mailbox(TaskResult).new
+      normalized_needle = normalize_needle(needle)
+      task = Task.new(0, haystack, normalized_needle, compute_indices, response_ch)
 
-      # Create events for sending to each worker
-      # Each event will: send to worker, then wait for response
-      worker_events = @workers.map do |worker_ch|
-        # Create an event that sends to worker and waits for response
-        CML.wrap(worker_ch.send_evt(task)) do
-          response_ch.recv
-        end
-      end
+      worker_idx = (@next_worker.add(1) % @size).abs
+      @workers[worker_idx].send(task)
 
-      # Create a choice among all workers
-      # All worker_events return TaskResult
-      work_choice = CML.choose(worker_events)
-      # Wrap to union type for compatibility with timeout event
-      work_choice = CML.wrap(work_choice) { |result| result.as(TaskResult | Symbol) }
-
-      # Timeout event returns Nil, wrap to Symbol to match type
       timeout_evt = CML.wrap(CML.timeout(timeout)) { :timeout.as(TaskResult | Symbol) }
-
-      # Now we have Event(TaskResult) and Event(Symbol)
-      # Apply circuit breaker to work choice
-      circuit_event = @circuit_breaker.call_event(work_choice)
-      # circuit_event returns TaskResult | Symbol | Nil
-      # Wrap to convert nil to :circuit_open symbol
+      recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(TaskResult | Symbol) }
+      circuit_event = @circuit_breaker.call_event(recv_evt)
       circuit_wrapped = CML.wrap(circuit_event) { |result| result || :circuit_open.as(TaskResult | Symbol) }
 
-      # Combine circuit-wrapped work event with timeout
       begin
         result = CML.sync(CML.choose([circuit_wrapped, timeout_evt]))
 
@@ -346,6 +189,7 @@ module Nucleoc
         # Supervise worker fiber for fault tolerance
         _control_ch = @supervisor.supervise(worker_idx) do
           matcher = Matcher.new(@config)
+          indices_buffer = [] of UInt32
 
           loop do
             # Wait for task (blocks until task arrives)
@@ -356,26 +200,31 @@ module Nucleoc
               when Task
                 # Process single task
                 score = if task.compute_indices?
-                          indices = [] of UInt32
-                          matcher.fuzzy_indices(task.haystack, task.needle, indices)
+                          indices_buffer.clear
+                          matcher.fuzzy_indices_normalized(task.haystack, task.needle, indices_buffer)
                         else
-                          matcher.fuzzy_match(task.haystack, task.needle)
+                          matcher.fuzzy_match_normalized(task.haystack, task.needle)
                         end
 
-                indices = task.compute_indices? ? indices : nil
+                indices = task.compute_indices? ? indices_buffer.dup : nil
                 task.reply_channel.send(TaskResult.new(task.id, score, indices))
               when BatchTask
                 # Process batch using parallel matcher for intra-task parallelism
-                if task.compute_indices?
-                  chunk_results = matcher.parallel_fuzzy_indices(task.haystacks, task.needle)
-                  # Convert to BatchTaskResult format
-                  scores = chunk_results.map { |res| res.try(&.[0]) }
-                  indices = chunk_results.map { |res| res.try(&.[1]) }
-                  task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, indices))
-                else
-                  scores = matcher.parallel_fuzzy_match(task.haystacks, task.needle)
-                  task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, nil))
+                scores = Array(UInt16?).new(task.haystacks.size, nil)
+                indices = task.compute_indices? ? Array(Array(UInt32)?).new(task.haystacks.size, nil) : nil
+
+                task.haystacks.each_with_index do |haystack, idx|
+                  if task.compute_indices?
+                    indices_buffer.clear
+                    score = matcher.fuzzy_indices_normalized(haystack, task.needle, indices_buffer)
+                    scores[idx] = score
+                    indices.not_nil![idx] = indices_buffer.dup
+                  else
+                    scores[idx] = matcher.fuzzy_match_normalized(haystack, task.needle)
+                  end
                 end
+
+                task.reply_channel.send(BatchTaskResult.new(task.start_idx, scores, indices))
               end
             rescue ex
               # Log the error and send a failure result
@@ -410,6 +259,70 @@ module Nucleoc
         end
         # _control_ch can be used to stop/restart worker if needed
       end
+    end
+
+    private def normalize_needle(needle : String) : String
+      Matcher.new(@config).normalize_needle(needle)
+    end
+
+    private def chunk_size_for(total : Int32) : Int32
+      target_chunks = (@size * 4).clamp(1, 64)
+      (total // target_chunks).clamp(1, total)
+    end
+
+    private def collect_batch_results(haystacks : Array(String), needle : String, compute_indices : Bool, timeout : Time::Span?) : {Array(UInt16?), Array(Array(UInt32)?)?}
+      response_ch = CML::Mailbox(BatchTaskResult).new
+      chunk_size = chunk_size_for(haystacks.size)
+      chunk_count = (haystacks.size + chunk_size - 1) // chunk_size
+      normalized_needle = normalize_needle(needle)
+
+      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
+        start_idx = chunk_idx * chunk_size
+        task = BatchTask.new(start_idx, slice, normalized_needle, compute_indices, response_ch)
+        worker_idx = chunk_idx % @size
+        @workers[worker_idx].send(task)
+      end
+
+      scores = Array(UInt16?).new(haystacks.size, nil)
+      indices = compute_indices ? Array(Array(UInt32)?).new(haystacks.size, nil) : nil
+
+      if timeout
+        timeout_evt = CML.wrap(CML.timeout(timeout.as(Time::Span))) { :timeout.as(BatchTaskResult | Symbol) }
+        remaining = chunk_count
+        while remaining > 0
+          recv_evt = CML.wrap(response_ch.recv_evt) { |result| result.as(BatchTaskResult | Symbol) }
+          result = CML.sync(CML.choose([recv_evt, timeout_evt]))
+
+          if result.is_a?(BatchTaskResult)
+            result.scores.each_with_index do |score, idx|
+              scores[result.start_idx + idx] = score
+            end
+            if compute_indices && indices && result.indices
+              result.indices.as(Array(Array(UInt32)?)).each_with_index do |idx_list, idx|
+                indices[result.start_idx + idx] = idx_list
+              end
+            end
+            remaining -= 1
+          else
+            break
+          end
+        end
+        remaining.times { response_ch.recv } if remaining > 0
+      else
+        chunk_count.times do
+          result = response_ch.recv
+          result.scores.each_with_index do |score, idx|
+            scores[result.start_idx + idx] = score
+          end
+          if compute_indices && indices && result.indices
+            result.indices.as(Array(Array(UInt32)?)).each_with_index do |idx_list, idx|
+              indices[result.start_idx + idx] = idx_list
+            end
+          end
+        end
+      end
+
+      {scores, indices}
     end
   end
 end

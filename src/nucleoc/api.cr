@@ -120,27 +120,33 @@ module Nucleoc
     @pattern : MultiPattern
     @items : Array(String)
     @snapshot : Snapshot?
+    @max_results : Int32?
     @active_injectors : Int32 = 0
     @baseline_injectors : Int32 = 0
     @baseline_set : Bool = false
     @mtx = Mutex.new
+    @data_mtx = Mutex.new
     @mailbox : CML::Mailbox(Command(T))
     @notify : Proc(Nil)
     @generation : Int32 = 0
+    @running = Atomic(Bool).new(false)
+    @dirty = Atomic(Bool).new(false)
+    @needs_run = Atomic(Bool).new(true)
 
-    def initialize(config : Config = Config.new, notify : -> _ = -> { nil }, num_threads : Int32? = 1, columns : Int32 = 1)
+    def initialize(config : Config = Config.new, notify : -> _ = -> { nil }, num_threads : Int32? = 1, columns : Int32 = 1, max_results : Int32? = nil)
       @matcher = Matcher.new(config)
       @pattern = MultiPattern.new(columns)
       @items = [] of String
       @snapshot = nil
+      @max_results = max_results
       @worker_count = num_threads || 1
       @mailbox = CML::Mailbox(Command(T)).new
       @notify = -> { notify.call; nil }
     end
 
     # Rust constructor parity
-    def initialize(config : Config, notify : Proc(Nil), num_threads : Int32?, columns : Int32)
-      initialize(config, -> { notify.call }, num_threads, columns)
+    def initialize(config : Config, notify : Proc(Nil), num_threads : Int32?, columns : Int32, max_results : Int32? = nil)
+      initialize(config, -> { notify.call }, num_threads, columns, max_results)
     end
 
     def register_injector(gen : Int32)
@@ -189,16 +195,27 @@ module Nucleoc
     end
 
     def update_config(config : Config)
-      @matcher = Matcher.new(config)
-      # force snapshot invalidation
-      @snapshot = nil
+      @data_mtx.synchronize do
+        @matcher = Matcher.new(config)
+        @snapshot = nil
+        @needs_run.set(true)
+      end
+    end
+
+    def max_results=(value : Int32?)
+      @data_mtx.synchronize do
+        @max_results = value
+        @snapshot = nil
+        @needs_run.set(true)
+      end
     end
 
     def update_pattern(pattern_str : String, case_matching : CaseMatching, normalization : Normalization)
-      # Reparse column 0 of the multi-pattern
-      @pattern.reparse(0, pattern_str, case_matching, normalization, false)
-      # Invalidate snapshot
-      @snapshot = nil
+      @data_mtx.synchronize do
+        @pattern.reparse(0, pattern_str, case_matching, normalization, false)
+        @snapshot = nil
+        @needs_run.set(true)
+      end
     end
 
     def sort_results(_sort_results : Bool)
@@ -210,7 +227,18 @@ module Nucleoc
     end
 
     def tick(_timeout : Int) : Status
-      refresh_snapshot
+      changed = @dirty.swap(false)
+
+      if @running.get
+        return Status.new(changed: changed, running: true)
+      end
+
+      if @snapshot.nil? || @needs_run.get
+        start_async_match
+        return Status.new(changed: changed, running: true)
+      end
+
+      Status.new(changed: changed, running: false)
     end
 
     def match_list(items : Array(String), pattern : String) : Array(MatchResult)
@@ -234,8 +262,12 @@ module Nucleoc
     end
 
     def match : Snapshot
-      refresh_snapshot
-      @snapshot.not_nil!
+      @data_mtx.synchronize do
+        if @snapshot.nil?
+          @snapshot = Snapshot.new([] of MatchResult, @pattern.snapshot_copy)
+        end
+        @snapshot.not_nil!
+      end
     end
 
     def size : Int32
@@ -253,51 +285,105 @@ module Nucleoc
     private def process_command(cmd : Command(T)) : Status?
       case cmd.kind
       when Command::Kind::Add
-        cmd.payload.try { |items| @items.concat(items) }
-        @snapshot = nil
+        @data_mtx.synchronize do
+          cmd.payload.try { |items| @items.concat(items) }
+          @snapshot = nil
+          @needs_run.set(true)
+        end
       when Command::Kind::Extend
-        cmd.payload.try { |items| @items.concat(items) }
-        @snapshot = nil
+        @data_mtx.synchronize do
+          cmd.payload.try { |items| @items.concat(items) }
+          @snapshot = nil
+          @needs_run.set(true)
+        end
       when Command::Kind::Clear
-        @items.clear
-        @snapshot = nil
+        @data_mtx.synchronize do
+          @items.clear
+          @snapshot = nil
+          @needs_run.set(true)
+        end
       when Command::Kind::Restart
-        @items = [] of String
-        @snapshot = nil if cmd.clear_snapshot?
+        @data_mtx.synchronize do
+          @items = [] of String
+          @snapshot = nil if cmd.clear_snapshot?
+          @needs_run.set(true)
+        end
       when Command::Kind::UpdatePattern
-        @pattern = cmd.pattern.not_nil!
-        @snapshot = nil
+        @data_mtx.synchronize do
+          @pattern = cmd.pattern.not_nil!
+          @snapshot = nil
+          @needs_run.set(true)
+        end
       when Command::Kind::Tick
-        status = refresh_snapshot
+        status = tick(0)
         @notify.call
         return status
       end
       nil
     end
 
-    private def refresh_snapshot : Status
-      changed = false
-      if @snapshot.nil?
-        vector = BoxcarVector(MatchResult).new
-        @items.each do |item|
-          if score = @pattern.score([item], @matcher)
-            vector.push(MatchResult.new(item, score))
-          end
-        end
-        sorted = vector.sort_snapshot { |a, b| a < b }
-        @snapshot = Snapshot.new(sorted, @pattern)
-        changed = true
+    private def start_async_match
+      return if @running.swap(true)
+      @needs_run.set(false)
+
+      items_snapshot = nil.as(Array(String)?)
+      pattern_snapshot = nil.as(MultiPattern?)
+      matcher_config = nil.as(Config?)
+
+      @data_mtx.synchronize do
+        items_snapshot = @items.dup
+        pattern_snapshot = @pattern.snapshot_copy
+        matcher_config = @matcher.config
       end
-      Status.new(changed: changed, running: false)
+
+      spawn do
+        snapshot = build_snapshot(
+          items_snapshot.not_nil!,
+          pattern_snapshot.not_nil!,
+          matcher_config.not_nil!
+        )
+
+        @data_mtx.synchronize do
+          @snapshot = snapshot
+        end
+        @dirty.set(true)
+        @running.set(false)
+
+        if @needs_run.get
+          start_async_match
+        end
+      end
+    end
+
+    private def build_snapshot(items : Array(String), pattern : MultiPattern, config : Config) : Snapshot
+      matcher = Matcher.new(config)
+      vector = BoxcarVector(MatchResult).new(items.size)
+      items.each do |item|
+        score = if pattern.columns == 1
+                  pattern.score_single(item, matcher)
+                else
+                  nil
+                end
+        vector.push(MatchResult.new(item, score)) if score
+      end
+      max_results = @max_results
+      sorted = if vector.size <= 1
+                 vector.snapshot.to_a
+               elsif max_results && max_results > 0
+                 vector.top_k_snapshot(max_results) { |a, b| a < b }
+               else
+                 vector.sort_snapshot { |a, b| a < b }
+               end
+      Snapshot.new(sorted, pattern)
     end
   end
 
-  def self.new_matcher(config : Config = Config.new) : Nucleo(String)
-    Nucleo(String).new(config)
+  def self.new_matcher(config : Config = Config.new, max_results : Int32? = nil) : Nucleo(String)
+    Nucleo(String).new(config, max_results: max_results)
   end
 
-  def self.new_matcher(type : T.class, config : Config = Config.new) : Nucleo(T) forall T
-    Nucleo(T).new(config)
+  def self.new_matcher(type : T.class, config : Config = Config.new, max_results : Int32? = nil) : Nucleo(T) forall T
+    Nucleo(T).new(config, max_results: max_results)
   end
 
   def self.fuzzy_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?
@@ -314,40 +400,101 @@ module Nucleoc
 
   # Parallel fuzzy match across many haystacks using a shared needle.
   # Returns an array of scores in the same order as the input.
-  # Uses CML-based worker pool for proper concurrent processing.
+  # Uses worker pools for proper concurrent processing.
   def self.parallel_fuzzy_match(
     haystacks : Array(String),
     needle : String,
     config : Config = Config.new,
     workers : Int32? = nil,
     timeout : Time::Span? = nil,
-    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil
+    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil,
+    strategy : Symbol = :auto,
   ) : Array(UInt16?)
-    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
-    pool.match_many(haystacks, needle, false, timeout).first
+    return [] of UInt16? if haystacks.empty?
+
+    case choose_parallel_strategy(haystacks.size, strategy)
+    when :sequential
+      matcher = Matcher.new(config)
+      haystacks.map { |haystack| matcher.fuzzy_match(haystack, needle) }
+    when :fiber
+      matcher = Matcher.new(config)
+      matcher.parallel_fuzzy_match_fiber(haystacks, needle)
+    when :spawn
+      matcher = Matcher.new(config)
+      matcher.parallel_fuzzy_match(haystacks, needle)
+    when :fiber_pool
+      pool = FiberWorkerPool.new(workers || FiberWorkerPool.default_size, config)
+      pool.match_many(haystacks, needle, false).first
+    when :cml_pool, :pool
+      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool.match_many(haystacks, needle, false, timeout).first
+    else
+      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      pool.match_many(haystacks, needle, false, timeout).first
+    end
   end
 
   # Parallel fuzzy match with indices across many haystacks using a shared needle.
   # Returns an array of optional tuples {score, indices} in the same order as the input.
-  # Uses CML-based worker pool for proper concurrent processing.
+  # Uses worker pools for proper concurrent processing.
   def self.parallel_fuzzy_indices(
     haystacks : Array(String),
     needle : String,
     config : Config = Config.new,
     workers : Int32? = nil,
     timeout : Time::Span? = nil,
-    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil
+    error_handler : Proc(ErrorHandling::WorkerError, Nil)? = nil,
+    strategy : Symbol = :auto,
   ) : Array(Tuple(UInt16, Array(UInt32))?)
-    pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
-    scores, indices = pool.match_many(haystacks, needle, true, timeout)
-    result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
-    scores.each_with_index do |score, idx|
-      if score && indices
+    return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
+
+    case choose_parallel_strategy(haystacks.size, strategy)
+    when :sequential
+      matcher = Matcher.new(config)
+      haystacks.map do |haystack|
+        indices = [] of UInt32
+        score = matcher.fuzzy_indices(haystack, needle, indices)
+        score ? {score, indices} : nil
+      end
+    when :fiber
+      matcher = Matcher.new(config)
+      matcher.parallel_fuzzy_indices_fiber(haystacks, needle)
+    when :spawn
+      matcher = Matcher.new(config)
+      matcher.parallel_fuzzy_indices(haystacks, needle)
+    when :fiber_pool
+      pool = FiberWorkerPool.new(workers || FiberWorkerPool.default_size, config)
+      scores, indices = pool.match_many(haystacks, needle, true)
+      result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      scores.each_with_index do |score, idx|
+        next unless score && indices
         idx_list = indices[idx]
         result[idx] = {score, idx_list.not_nil!} if idx_list
       end
+      result
+    when :cml_pool, :pool
+      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      scores, indices = pool.match_many(haystacks, needle, true, timeout)
+      result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      scores.each_with_index do |score, idx|
+        if score && indices
+          idx_list = indices[idx]
+          result[idx] = {score, idx_list.not_nil!} if idx_list
+        end
+      end
+      result
+    else
+      pool = CMLWorkerPool.new(workers || CMLWorkerPool.default_size, config, error_handler)
+      scores, indices = pool.match_many(haystacks, needle, true, timeout)
+      result = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      scores.each_with_index do |score, idx|
+        if score && indices
+          idx_list = indices[idx]
+          result[idx] = {score, idx_list.not_nil!} if idx_list
+        end
+      end
+      result
     end
-    result
   end
 
   # Parallel fuzzy match using CML.spawn for lightweight parallelism
@@ -360,6 +507,20 @@ module Nucleoc
   def self.parallel_fuzzy_indices_spawn(haystacks : Array(String), needle : String, config : Config = Config.new, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
     matcher = Matcher.new(config)
     matcher.parallel_fuzzy_indices(haystacks, needle, chunk_size)
+  end
+
+  private def self.choose_parallel_strategy(count : Int32, strategy : Symbol) : Symbol
+    return strategy unless strategy == :auto
+
+    # Keep small workloads sequential, use stdlib fibers for mid-size,
+    # CML.spawn for larger batches, and a pool for very large.
+    cpu_count = System.cpu_count
+    cpu = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+    return :sequential if count < 256
+    return :fiber if count < cpu * 512
+    return :spawn if count < cpu * 2048
+    return :fiber_pool if count < cpu * 8192
+    :cml_pool
   end
 
   def self.substring_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?

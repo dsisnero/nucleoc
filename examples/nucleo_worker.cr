@@ -13,6 +13,10 @@ nucleo.pattern = "hello"
 status = nucleo.tick(0)
 puts "changed=#{status.changed?} running=#{status.running?}"
 
+while status.running?
+  status = nucleo.tick(0)
+end
+
 snapshot = nucleo.match
 snapshot.items.each do |match|
   puts "#{match.item}: #{match.score}"

@@ -10,6 +10,7 @@ require "./nucleoc/prefilter"
 require "./nucleoc/boxcar"
 require "./nucleoc/worker_pool"
 require "./nucleoc/worker_pool_cml"
+require "./nucleoc/worker_pool_fiber"
 require "./nucleoc/api"
 require "./nucleoc/error_handling"
 

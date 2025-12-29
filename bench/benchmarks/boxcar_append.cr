@@ -3,7 +3,7 @@ require "./support"
 module NucleocBench
   module BoxcarAppend
     def self.run(config : Config)
-      report_header("BoxcarVector append", config)
+      NucleocBench.report_header("BoxcarVector append", config)
       values = Array.new(config.dataset_size) { |i| i }
 
       Benchmark.ips(calculation: config.calculation, warmup: config.warmup) do |x|

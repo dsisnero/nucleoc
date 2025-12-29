@@ -1,4 +1,13 @@
 require "./spec_helper"
+
+private def wait_for_snapshot(matcher)
+  status = matcher.tick(0)
+  while status.running?
+    Fiber.yield
+    status = matcher.tick(0)
+  end
+end
+
 require "../src/nucleoc"
 
 describe Nucleoc do
@@ -211,11 +220,26 @@ describe Nucleoc do
       matcher.add("hello there")
 
       matcher.pattern = "hello"
+      wait_for_snapshot(matcher)
       snapshot = matcher.match
 
       snapshot.size.should eq(2)
       snapshot.items[0].data.should eq("hello world")
       snapshot.items[1].data.should eq("hello there")
+    end
+
+    it "limits snapshots when max_results is set" do
+      matcher = Nucleoc.new_matcher(max_results: 1)
+      matcher.add("hello world")
+      matcher.add("hello there")
+      matcher.add("goodbye")
+
+      matcher.pattern = "hello"
+      wait_for_snapshot(matcher)
+      snapshot = matcher.match
+
+      snapshot.size.should eq(1)
+      snapshot.items[0].data.should eq("hello world")
     end
 
     it "can sort by score" do
@@ -225,6 +249,7 @@ describe Nucleoc do
       matcher.add("hello there world")
 
       matcher.pattern = "hello"
+      wait_for_snapshot(matcher)
       snapshot = matcher.match
 
       # Debug: print scores

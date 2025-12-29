@@ -83,6 +83,30 @@ module Nucleoc
       fuzzy_match_impl(haystack, needle, indices, true)
     end
 
+    # Normalize a needle string using the current config.
+    def normalize_needle(needle : String) : String
+      normalize_input(needle)
+    end
+
+    # Find the fuzzy match using a pre-normalized needle.
+    def fuzzy_match_normalized(haystack : String, needle : String) : UInt16?
+      haystack = normalize_input(haystack)
+      return 0_u16 if needle.empty?
+      return if haystack.empty?
+
+      indices = [] of UInt32
+      fuzzy_match_impl(haystack, needle, indices, false)
+    end
+
+    # Find the fuzzy match and indices using a pre-normalized needle.
+    def fuzzy_indices_normalized(haystack : String, needle : String, indices : Array(UInt32)) : UInt16?
+      haystack = normalize_input(haystack)
+      return 0_u16 if needle.empty?
+      return if haystack.empty?
+
+      fuzzy_match_impl(haystack, needle, indices, true)
+    end
+
     private def fuzzy_match_impl(haystack : String, needle : String, indices : Array(UInt32), compute_indices : Bool) : UInt16?
       # Special-case single-character needles using greedy substring behavior
       # This mirrors Rust's substring_match_1_* functions and keeps tests that
@@ -1117,20 +1141,21 @@ module Nucleoc
     def parallel_fuzzy_match(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(UInt16?)
       return [] of UInt16? if haystacks.empty?
 
-      # Threshold for parallelization
-      parallel_threshold = 100
+      parallel_threshold = parallel_threshold_for(haystacks.size)
       if haystacks.size <= parallel_threshold
-        return haystacks.map { |haystack| fuzzy_match(haystack, needle) }
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
       end
 
       # Determine chunk size
       cpu_count = System.cpu_count
       cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
       target_chunks = cpu_count.clamp(1, 16)
-      chunk_size = chunk_size || (haystacks.size // target_chunks).clamp(1, haystacks.size)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
 
       # Create channels for results
       channels = [] of CML::Chan(Tuple(Int32, Array(UInt16?)))
+      normalized_needle = normalize_needle(needle)
 
       # Split into chunks and spawn fibers
       haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
@@ -1139,7 +1164,7 @@ module Nucleoc
         start_idx = chunk_idx * chunk_size
 
         CML.spawn do
-          chunk_scores = slice.map { |haystack| fuzzy_match(haystack, needle) }
+          chunk_scores = slice.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
           chan.send({start_idx, chunk_scores})
         end
       end
@@ -1156,15 +1181,56 @@ module Nucleoc
       results
     end
 
+    # Parallel fuzzy match across multiple haystacks using Crystal spawn + Channel
+    def parallel_fuzzy_match_fiber(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(UInt16?)
+      return [] of UInt16? if haystacks.empty?
+
+      parallel_threshold = parallel_threshold_for(haystacks.size)
+      if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
+      end
+
+      cpu_count = System.cpu_count
+      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      target_chunks = cpu_count.clamp(1, 16)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+
+      channels = [] of Channel(Tuple(Int32, Array(UInt16?)))
+      normalized_needle = normalize_needle(needle)
+
+      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
+        chan = Channel(Tuple(Int32, Array(UInt16?))).new
+        channels << chan
+        start_idx = chunk_idx * chunk_size
+
+        spawn do
+          chunk_scores = slice.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
+          chan.send({start_idx, chunk_scores})
+        end
+      end
+
+      results = Array(UInt16?).new(haystacks.size, nil)
+      channels.each do |chan|
+        start_idx, chunk_scores = chan.receive
+        chunk_scores.each_with_index do |score, idx|
+          results[start_idx + idx] = score
+        end
+      end
+
+      results
+    end
+
     # Parallel fuzzy match with indices
     def parallel_fuzzy_indices(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
       return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
 
-      parallel_threshold = 100
+      parallel_threshold = parallel_threshold_for(haystacks.size)
       if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
         return haystacks.map do |haystack|
           indices = [] of UInt32
-          score = fuzzy_indices(haystack, needle, indices)
+          score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
           score ? {score, indices} : nil
         end
       end
@@ -1172,9 +1238,10 @@ module Nucleoc
       cpu_count = System.cpu_count
       cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
       target_chunks = cpu_count.clamp(1, 16)
-      chunk_size = chunk_size || (haystacks.size // target_chunks).clamp(1, haystacks.size)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
 
       channels = [] of CML::Chan(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?)))
+      normalized_needle = normalize_needle(needle)
 
       haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
         chan = CML::Chan(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?))).new
@@ -1184,7 +1251,7 @@ module Nucleoc
         CML.spawn do
           chunk_results = slice.map do |haystack|
             indices = [] of UInt32
-            score = fuzzy_indices(haystack, needle, indices)
+            score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
             score ? {score, indices} : nil
           end
           chan.send({start_idx, chunk_results})
@@ -1200,6 +1267,64 @@ module Nucleoc
       end
 
       results
+    end
+
+    # Parallel fuzzy match with indices using Crystal spawn + Channel
+    def parallel_fuzzy_indices_fiber(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+      return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
+
+      parallel_threshold = parallel_threshold_for(haystacks.size)
+      if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map do |haystack|
+          indices = [] of UInt32
+          score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
+          score ? {score, indices} : nil
+        end
+      end
+
+      cpu_count = System.cpu_count
+      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      target_chunks = cpu_count.clamp(1, 16)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+
+      channels = [] of Channel(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?)))
+      normalized_needle = normalize_needle(needle)
+
+      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
+        chan = Channel(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?))).new
+        channels << chan
+        start_idx = chunk_idx * chunk_size
+
+        spawn do
+          chunk_results = slice.map do |haystack|
+            indices = [] of UInt32
+            score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
+            score ? {score, indices} : nil
+          end
+          chan.send({start_idx, chunk_results})
+        end
+      end
+
+      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      channels.each do |chan|
+        start_idx, chunk_results = chan.receive
+        chunk_results.each_with_index do |result, idx|
+          results[start_idx + idx] = result
+        end
+      end
+
+      results
+    end
+
+    private def parallel_threshold_for(total : Int32) : Int32
+      cpu_count = System.cpu_count
+      cpu = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      (cpu * 64).clamp(128, 4096)
+    end
+
+    private def parallel_chunk_size(total : Int32, target_chunks : Int32) : Int32
+      (total // target_chunks).clamp(1, total)
     end
 
     def config : Config

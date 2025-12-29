@@ -208,15 +208,21 @@ scores = Nucleoc.parallel_fuzzy_match(haystacks, needle)
 # With indices
 results = Nucleoc.parallel_fuzzy_indices(haystacks, needle)
 # results = [{score, indices}, {score, indices}, nil, nil]
+
+# Force a strategy (:sequential, :fiber, :spawn, :fiber_pool, :cml_pool, :pool, :auto)
+scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, strategy: :spawn)
+# :pool is an alias for :cml_pool; :auto picks based on batch size.
 ```
 
 #### Custom Worker Pool
 ```crystal
-# Create worker pool with custom size
-pool = Nucleoc::WorkerPool.new(workers: 4)
+# Create worker pools with custom size
+cml_pool = Nucleoc::CMLWorkerPool.new(4)
+fiber_pool = Nucleoc::FiberWorkerPool.new(4)
 
 # Batch matching
-scores, indices = pool.match_many(haystacks, needle, compute_indices: true)
+scores, indices = cml_pool.match_many(haystacks, needle, compute_indices: true)
+scores, indices = fiber_pool.match_many(haystacks, needle, compute_indices: true)
 ```
 
 #### Direct API Functions
@@ -239,6 +245,9 @@ result = Nucleoc.fuzzy_match_indices("hello world", "hlo")
 # Create a Nucleo instance for managing collections
 nucleo = Nucleoc.new_matcher
 
+# Optionally cap results for faster snapshot builds
+nucleo = Nucleoc.new_matcher(max_results: 100)
+
 # Add items
 nucleo.add("hello")
 nucleo.add_all(["world", "foo", "bar"])
@@ -246,7 +255,7 @@ nucleo.add_all(["world", "foo", "bar"])
 # Update pattern
 nucleo.pattern = "lo"  # Sets pattern to "lo"
 
-# Recompute snapshot (synchronous in this Crystal port)
+# Schedule snapshot recompute (async in this Crystal port)
 status = nucleo.tick(0)
 puts "changed=#{status.changed?} running=#{status.running?}"
 
@@ -261,7 +270,7 @@ nucleo.clear
 ```
 
 Notes:
-- `tick` recomputes the snapshot synchronously in this Crystal port.
+- `tick` schedules background matching and reports whether a run is still in progress.
 - Use `parallel_fuzzy_match` or `CMLWorkerPool` for parallel batch matching.
 
 #### Incremental Updates with Injector
@@ -295,7 +304,7 @@ puts score
 
 The high-level Nucleo API is designed to be called from your UI loop. Each UI
 tick updates the pattern, calls `tick`, and reads the latest snapshot. In this
-Crystal port, `tick` runs synchronously, so choose an appropriate call cadence.
+Crystal port, `tick` schedules background matching and returns quickly.
 
 ```crystal
 config = Nucleoc::Config.new
@@ -322,8 +331,9 @@ end
 
 #### Debouncing Redraws
 
-`tick` is synchronous in this port, so avoid calling it more frequently than
-your UI needs. A common approach is to debounce redraws to ~16ms (60 FPS).
+`tick` is non-blocking in this port, so avoid scheduling new runs more
+frequently than your UI needs. A common approach is to debounce redraws to
+~16ms (60 FPS).
 
 ```crystal
 last_tick = Time.monotonic

@@ -3,8 +3,8 @@ require "./support"
 module NucleocBench
   module MultiPatternMatching
     def self.run(config : Config)
-      report_header("MultiPattern concurrent matching", config)
-      rows = multi_column_haystacks(
+      NucleocBench.report_header("MultiPattern concurrent matching", config)
+      rows = NucleocBench.multi_column_haystacks(
         config.dataset_size,
         config.columns,
         config.haystack_size,

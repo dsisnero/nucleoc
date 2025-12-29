@@ -3,6 +3,7 @@ require "../benchmarks/boxcar_append"
 require "../benchmarks/par_sort_scaling"
 require "../benchmarks/worker_pool_throughput"
 require "../benchmarks/multi_pattern_matching"
+require "../benchmarks/top_k_selection"
 
 module NucleocBench
   BENCHMARKS = {
@@ -10,6 +11,7 @@ module NucleocBench
     "par_sort"      => ParSortScaling,
     "worker_pool"   => WorkerPoolThroughput,
     "multi_pattern" => MultiPatternMatching,
+    "top_k"         => TopKSelection,
   }
 
   def self.run_all(config : Config)
@@ -41,6 +43,7 @@ module NucleocBench
     puts "  BENCH_COLUMNS     MultiPattern columns (default 3)"
     puts "  BENCH_CORES       Worker counts, comma-separated (default 1,2,4)"
     puts "  BENCH_SORT_SIZES  ParSort sizes, comma-separated (default 1000,10000,100000)"
+    puts "  BENCH_TOPK        Top-K selection size (default 100)"
     puts "  BENCH_WARMUP      Warmup seconds (default 2.0)"
     puts "  BENCH_CALC        Calculation seconds (default 5.0)"
     puts "  CRYSTAL_WORKERS   Thread count for CML.spawn scaling"

@@ -62,6 +62,16 @@ module Nucleoc
       end
     end
 
+    # Return a copy that is safe to use without holding locks.
+    def snapshot_copy : MultiPattern
+      copy = MultiPattern.new(columns)
+      @cols.each_with_index do |(pattern, status), idx|
+        copy_cols = copy.@cols
+        copy_cols[idx] = {pattern, status}
+      end
+      copy
+    end
+
     # Checks if all column patterns are empty.
     def empty? : Bool
       @cols.all? { |pattern, _| pattern.atoms.empty? }
@@ -79,6 +89,13 @@ module Nucleoc
         total += column_score
       end
       total
+    end
+
+    # Score a single-column haystack without allocating arrays.
+    def score_single(haystack : String, matcher : Matcher) : UInt16?
+      return if @cols.size != 1
+      pattern, _ = @cols[0]
+      pattern.match(matcher, haystack)
     end
 
     # Scores a multi-column haystack using parallel matching across columns.
