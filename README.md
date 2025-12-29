@@ -246,6 +246,10 @@ nucleo.add_all(["world", "foo", "bar"])
 # Update pattern
 nucleo.pattern = "lo"  # Sets pattern to "lo"
 
+# Recompute snapshot (synchronous in this Crystal port)
+status = nucleo.tick(0)
+puts "changed=#{status.changed?} running=#{status.running?}"
+
 # Get matches
 snapshot = nucleo.match
 snapshot.items.each do |result|
@@ -255,6 +259,10 @@ end
 # Clear items
 nucleo.clear
 ```
+
+Notes:
+- `tick` recomputes the snapshot synchronously in this Crystal port.
+- Use `parallel_fuzzy_match` or `CMLWorkerPool` for parallel batch matching.
 
 #### Incremental Updates with Injector
 ```crystal
@@ -270,7 +278,20 @@ injector.extend(["world", "foo", "bar"])
 # Injector automatically unregisters when done
 ```
 
-### 7. Debugging and Logging
+### 7. Multi-Column Matching (MultiPattern)
+
+```crystal
+matcher = Nucleoc::Matcher.new
+pattern = Nucleoc::MultiPattern.new(2)
+pattern.reparse(0, "foo")
+pattern.reparse(1, "bar")
+
+haystacks = ["foo.txt", "bar.log"]
+score = pattern.score(haystacks, matcher)
+puts score
+```
+
+### 8. Debugging and Logging
 
 ```crystal
 # Enable debug logging
@@ -284,7 +305,7 @@ score = matcher.fuzzy_match("hello world", "hlo")
 # LOG_LEVEL=DEBUG crystal run your_script.cr
 ```
 
-### 8. Performance Tips
+### 9. Performance Tips
 
 1. **Reuse Matchers**: Create matcher once and reuse for multiple matches
 2. **Use Appropriate Algorithm**: Choose exact/substring when possible instead of fuzzy
@@ -292,7 +313,7 @@ score = matcher.fuzzy_match("hello world", "hlo")
 4. **Pre-compile Patterns**: Parse patterns once and reuse
 5. **Configure Delimiters**: Set appropriate `delimiter_chars` for your use case
 
-### 9. Common Use Cases
+### 10. Common Use Cases
 
 #### File Search
 ```crystal
@@ -444,6 +465,14 @@ This project is a complete port of the Rust nucleo library. The implementation i
 git clone https://github.com/dsisnero/nucleoc.git
 cd nucleoc
 shards install
+```
+
+### Examples
+```bash
+crystal run examples/basic.cr
+crystal run examples/nucleo_worker.cr
+crystal run examples/multi_pattern.cr
+crystal run examples/worker_pool.cr
 ```
 
 ### Running Tests
