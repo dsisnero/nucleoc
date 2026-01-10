@@ -32,3 +32,37 @@ missing field `snippets`
 [2m2025-12-10T20:41:27.786327Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m exit notification received, stopping
 [2m2025-12-10T20:41:40.550142Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m shutdown request received, shutting down
 [2m2025-12-10T20:41:40.551745Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m exit notification received, stopping
+[2m2025-12-29T05:05:20.810442Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/snippets/ruby.toml" for scope: Some(["ruby"])
+[2m2025-12-29T05:05:20.811602Z[0m [31mERROR[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m On read snippets from "/Users/dominic/.config/helix/snippets/ruby.toml": TOML parse error at line 1, column 1
+  |
+1 | [[snippet]]
+  | ^
+missing field `snippets`
+
+[2m2025-12-29T05:05:20.811875Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try read config from: "/Users/dominic/.config/helix/external-snippets.toml"
+[2m2025-12-29T05:05:20.813009Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/python/python.json" for scope: Some(["python"])
+[2m2025-12-29T05:05:20.813553Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/ruby/ruby.json" for scope: Some(["ruby"])
+[2m2025-12-29T05:05:20.814603Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/asciidoc.json" for scope: Some(["asciidoc"])
+[2m2025-12-29T05:05:20.815295Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/markdown.json" for scope: Some(["markdown"])
+[2m2025-12-29T05:05:20.815583Z[0m [31mERROR[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m On read dir "/Users/dominic/.config/helix/unicode-input": No such file or directory (os error 2)
+[2m2025-12-29T05:05:20.818405Z[0m [32m INFO[0m [2msimple_completion_language_server::server[0m[2m:[0m server initialized!
+[2m2025-12-29T05:05:20.818447Z[0m [32m INFO[0m [2msimple_completion_language_server::server[0m[2m:[0m Did change configuration: DidChangeConfigurationParams { settings: Object {"feature_paths": Bool(true), "feature_snippets": Bool(true), "feature_unicode_input": Bool(true), "feature_words": Bool(true), "max_completion_items": Number(20), "snippets_first": Bool(true)} }
+[2m2025-12-29T05:08:17.383474Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/snippets/ruby.toml" for scope: Some(["ruby"])
+[2m2025-12-29T05:08:17.383695Z[0m [31mERROR[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m On read snippets from "/Users/dominic/.config/helix/snippets/ruby.toml": TOML parse error at line 1, column 1
+  |
+1 | [[snippet]]
+  | ^
+missing field `snippets`
+
+[2m2025-12-29T05:08:17.383704Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try read config from: "/Users/dominic/.config/helix/external-snippets.toml"
+[2m2025-12-29T05:08:17.383863Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/python/python.json" for scope: Some(["python"])
+[2m2025-12-29T05:08:17.384116Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/ruby/ruby.json" for scope: Some(["ruby"])
+[2m2025-12-29T05:08:17.384354Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/asciidoc.json" for scope: Some(["asciidoc"])
+[2m2025-12-29T05:08:17.384690Z[0m [32m INFO[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m Try load snippets from: "/Users/dominic/.config/helix/external-snippets/github.com/rafamadriz/friendly-snippets.git/snippets/markdown.json" for scope: Some(["markdown"])
+[2m2025-12-29T05:08:17.384933Z[0m [31mERROR[0m [2msimple_completion_language_server::snippets::config[0m[2m:[0m On read dir "/Users/dominic/.config/helix/unicode-input": No such file or directory (os error 2)
+[2m2025-12-29T05:08:17.385601Z[0m [32m INFO[0m [2msimple_completion_language_server::server[0m[2m:[0m server initialized!
+[2m2025-12-29T05:08:17.385640Z[0m [32m INFO[0m [2msimple_completion_language_server::server[0m[2m:[0m Did change configuration: DidChangeConfigurationParams { settings: Object {"feature_paths": Bool(true), "feature_snippets": Bool(true), "feature_unicode_input": Bool(true), "feature_words": Bool(true), "max_completion_items": Number(20), "snippets_first": Bool(true)} }
+[2m2025-12-29T05:08:20.909522Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m shutdown request received, shutting down
+[2m2025-12-29T05:08:20.910012Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m exit notification received, stopping
+[2m2025-12-29T06:39:51.191435Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m shutdown request received, shutting down
+[2m2025-12-29T06:39:51.192825Z[0m [32m INFO[0m [2mtower_lsp::service::layers[0m[2m:[0m exit notification received, stopping
