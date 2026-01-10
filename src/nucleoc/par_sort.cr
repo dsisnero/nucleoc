@@ -72,14 +72,12 @@ module Nucleoc
 
         # Very short slices get sorted using insertion sort.
         if len <= MAX_INSERTION
-          insertion_sort(array, cur_start, cur_end, is_less)
-          return false
+          return insertion_sort(array, cur_start, cur_end, is_less, canceled)
         end
 
         # If too many bad pivot choices were made, fall back to heapsort.
         if cur_limit == 0
-          heapsort(array, cur_start, cur_end, is_less)
-          return false
+          return heapsort(array, cur_start, cur_end, is_less, canceled)
         end
 
         # If the last partitioning was imbalanced, try breaking patterns.
@@ -106,7 +104,8 @@ module Nucleoc
         end
 
         # Partition the slice.
-        mid, was_partitioned = partition(array, cur_start, cur_end, pivot_idx, is_less)
+        mid, was_partitioned = partition(array, cur_start, cur_end, pivot_idx, is_less, canceled)
+        return true if canceled.get
         debug_puts "  pivot_idx=#{pivot_idx} mid=#{mid} was_partitioned=#{was_partitioned}"
         was_balanced = Math.min(mid - cur_start, cur_end - mid) >= len // 8
 
@@ -178,14 +177,17 @@ module Nucleoc
       start : Int32,
       end_idx : Int32,
       is_less : T, T -> Bool,
-    ) forall T
+      canceled : Atomic(Bool),
+    ) : Bool forall T
       ((start + 1)...end_idx).each do |i|
+        return true if canceled.get
         j = i
         while j > start && is_less.call(array[j], array[j - 1])
           array.swap(j, j - 1)
           j -= 1
         end
       end
+      false
     end
 
     # Chooses a pivot and returns (pivot_index, likely_sorted).
@@ -267,9 +269,11 @@ module Nucleoc
       end_idx : Int32,
       pivot_idx : Int32,
       is_less : T, T -> Bool,
+      canceled : Atomic(Bool),
     ) : {Int32, Bool} forall T
       debug_puts "  partition start=#{start} end=#{end_idx} pivot_idx=#{pivot_idx} pivot_value=#{array[pivot_idx]}"
       debug_puts "  slice before: #{array[start...end_idx]}"
+      return {start, false} if canceled.get
       # Move pivot to the start
       array.swap(start, pivot_idx)
       pivot = array[start]
@@ -280,6 +284,7 @@ module Nucleoc
       was_partitioned = true
 
       (start + 1...end_idx).each do |i|
+        break if canceled.get
         if is_less.call(array[i], pivot)
           debug_puts "    i=#{i} value=#{array[i]} < pivot #{pivot}, swapping with store_idx=#{store_idx}"
           array.swap(i, store_idx)
@@ -306,20 +311,24 @@ module Nucleoc
       start : Int32,
       end_idx : Int32,
       is_less : T, T -> Bool,
-    ) forall T
+      canceled : Atomic(Bool),
+    ) : Bool forall T
       len = end_idx - start
-      return if len <= 1
+      return false if len <= 1
 
       # Build max heap
       (len // 2 - 1).downto(0) do |i|
-        sift_down(array, start, end_idx, i, is_less)
+        return true if canceled.get
+        return true if sift_down(array, start, end_idx, i, is_less, canceled)
       end
 
       # Extract elements from heap
       (len - 1).downto(1) do |i|
+        return true if canceled.get
         array.swap(start, start + i)
-        sift_down(array, start, start + i, 0, is_less)
+        return true if sift_down(array, start, start + i, 0, is_less, canceled)
       end
+      false
     end
 
     private def self.sift_down(
@@ -328,9 +337,11 @@ module Nucleoc
       end_idx : Int32,
       root : Int32,
       is_less : T, T -> Bool,
-    ) forall T
+      canceled : Atomic(Bool),
+    ) : Bool forall T
       len = end_idx - start
       while (child = 2 * root + 1) < len
+        return true if canceled.get
         # Find larger child
         if child + 1 < len && is_less.call(array[start + child], array[start + child + 1])
           child += 1
@@ -342,6 +353,7 @@ module Nucleoc
         array.swap(start + root, start + child)
         root = child
       end
+      false
     end
 
     # Break patterns to avoid worst-case behavior.

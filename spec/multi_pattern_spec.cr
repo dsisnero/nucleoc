@@ -74,10 +74,18 @@ module Nucleoc
       mp.reparse(1, "world")
       config = Config.new
       haystacks = ["hello there", "world"]
-      # Very short timeout, should still complete
-      score = mp.score_with_timeout(haystacks, config, 1.millisecond)
+      score = mp.score_with_timeout(haystacks, config, 100.milliseconds)
       score.should_not be_nil
       score.not_nil!.should be > 0
+    end
+
+    it "returns nil when timeout elapses before completion" do
+      mp = MultiPattern.new(2)
+      mp.reparse(0, "hello")
+      mp.reparse(1, "world")
+      config = Config.new
+      haystacks = ["hello there", "world"]
+      mp.score_with_timeout(haystacks, config, 0.milliseconds).should be_nil
     end
   end
 end

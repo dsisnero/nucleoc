@@ -130,11 +130,54 @@ module Nucleoc
 
     # Parallel matching with cancellation support using CML events.
     # Returns the total score if all columns match before timeout, nil otherwise.
-    # TODO: Implement proper timeout with CML.choose
     def score_with_timeout(haystacks : Array(String), matcher_config : Config,
                            timeout : Time::Span) : UInt16?
-      # For now, just use parallel scoring without timeout
-      score_parallel(haystacks, matcher_config)
+      return if timeout <= 0.seconds
+
+      result_ch = CML::Mailbox(Tuple(Int32, UInt16?)).new
+
+      columns.times do |col|
+        CML.spawn do
+          matcher = Matcher.new(matcher_config)
+          pattern = @cols[col][0]
+          haystack = haystacks[col]? || ""
+          column_score = pattern.match(matcher, haystack)
+          result_ch.send({col, column_score})
+        end
+      end
+
+      deadline = Time.monotonic + timeout
+      scores = Array(UInt16?).new(columns, nil)
+      received = 0
+
+      while received < columns
+        remaining = deadline - Time.monotonic
+        return if remaining <= 0.seconds
+
+        recv_evt = CML.wrap(result_ch.recv_evt) do |result|
+          result.as(Tuple(Int32, UInt16?) | Symbol)
+        end
+        timeout_evt = CML.wrap(CML.timeout(remaining)) do
+          :timeout.as(Tuple(Int32, UInt16?) | Symbol)
+        end
+
+        result = CML.sync(CML.choose([recv_evt, timeout_evt]))
+
+        case result
+        when Tuple(Int32, UInt16?)
+          col_idx, column_score = result
+          next unless scores[col_idx].nil?
+          scores[col_idx] = column_score
+          received += 1
+        when :timeout
+          return
+        else
+          return
+        end
+      end
+
+      return if scores.any?(&.nil?)
+      scores.reduce(0_u16) { |sum, score| sum + score.as(UInt16) }
     end
   end
 end

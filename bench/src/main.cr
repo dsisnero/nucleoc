@@ -4,6 +4,7 @@ require "../benchmarks/par_sort_scaling"
 require "../benchmarks/worker_pool_throughput"
 require "../benchmarks/multi_pattern_matching"
 require "../benchmarks/top_k_selection"
+require "../benchmarks/nucleo_snapshot"
 
 module NucleocBench
   BENCHMARKS = {
@@ -12,6 +13,7 @@ module NucleocBench
     "worker_pool"   => WorkerPoolThroughput,
     "multi_pattern" => MultiPatternMatching,
     "top_k"         => TopKSelection,
+    "nucleo"        => NucleoSnapshot,
   }
 
   def self.run_all(config : Config)

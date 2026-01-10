@@ -376,6 +376,10 @@ module Nucleoc
     end
 
     private def build_snapshot(items : Array(String), pattern : MultiPattern, config : Config) : Snapshot
+      if pattern.columns == 1 && should_parallelize_snapshot?(items.size)
+        return build_snapshot_parallel(items, pattern, config)
+      end
+
       matcher = Matcher.new(config)
       vector = BoxcarVector(MatchResult).new(items.size)
       items.each do |item|
@@ -395,6 +399,129 @@ module Nucleoc
                  vector.sort_snapshot { |a, b| a < b }
                end
       Snapshot.new(sorted, pattern)
+    end
+
+    private def build_snapshot_parallel(items : Array(String), pattern : MultiPattern, config : Config) : Snapshot
+      worker_count = parallel_worker_count
+      chunk_size = (items.size + worker_count - 1) // worker_count
+      chunks = (items.size + chunk_size - 1) // chunk_size
+
+      results = Array(Array(MatchResult)?).new(chunks, nil)
+      channels = Array(Channel(Nil)).new(chunks) { Channel(Nil).new }
+
+      items.each_slice(chunk_size).with_index do |slice, chunk_idx|
+        channel = channels[chunk_idx]
+        spawn do
+          matcher = Matcher.new(config)
+          local = Array(MatchResult).new(slice.size)
+          slice.each do |item|
+            if score = pattern.score_single(item, matcher)
+              local << MatchResult.new(item, score)
+            end
+          end
+          results[chunk_idx] = local
+          channel.send(nil)
+        end
+      end
+
+      channels.each(&.receive)
+
+      merged = Array(MatchResult).new(items.size)
+      results.each do |chunk|
+        next unless chunk
+        merged.concat(chunk)
+      end
+
+      max_results = @max_results
+      sorted = if merged.size <= 1
+                 merged
+               elsif max_results && max_results > 0
+                 select_top_k(merged, max_results)
+               else
+                 sort_results(merged)
+               end
+      Snapshot.new(sorted, pattern)
+    end
+
+    private def sort_results(items : Array(MatchResult)) : Array(MatchResult)
+      items.sort! do |a, b|
+        if a < b
+          -1
+        elsif b < a
+          1
+        else
+          0
+        end
+      end
+      items
+    end
+
+    private def select_top_k(items : Array(MatchResult), k : Int32) : Array(MatchResult)
+      return [] of MatchResult if k <= 0
+      return sort_results(items) if items.size <= k
+
+      heap = [] of MatchResult
+      items.each do |item|
+        if heap.size < k
+          heap << item
+          sift_up(heap, heap.size - 1)
+        else
+          if item < heap[0]
+            heap[0] = item
+            sift_down(heap, 0)
+          end
+        end
+      end
+
+      sort_results(heap)
+    end
+
+    private def sift_up(heap : Array(MatchResult), idx : Int32) : Nil
+      current = idx
+      while current > 0
+        parent = (current - 1) // 2
+        if heap[parent] < heap[current]
+          heap[parent], heap[current] = heap[current], heap[parent]
+          current = parent
+        else
+          break
+        end
+      end
+    end
+
+    private def sift_down(heap : Array(MatchResult), idx : Int32) : Nil
+      size = heap.size
+      current = idx
+      loop do
+        left = current * 2 + 1
+        right = left + 1
+        break if left >= size
+
+        worst = left
+        if right < size && heap[left] < heap[right]
+          worst = right
+        end
+
+        if heap[current] < heap[worst]
+          heap[current], heap[worst] = heap[worst], heap[current]
+          current = worst
+        else
+          break
+        end
+      end
+    end
+
+    private def should_parallelize_snapshot?(items_size : Int32) : Bool
+      return false if items_size < 5000
+      return false if @worker_count <= 1
+      return false if ENV["CRYSTAL_WORKERS"]?.try(&.to_i?) == 1
+      true
+    end
+
+    private def parallel_worker_count : Int32
+      cpu_count = System.cpu_count
+      cpu = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      Math.min(@worker_count, cpu).clamp(1, 16)
     end
   end
 
