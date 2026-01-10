@@ -118,6 +118,26 @@ Notes:
 | Crystal CML pool | 50000 | 2 | 17.79 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
 | Crystal CML pool | 50000 | 4 | 17.70 | BENCH_CALC=1 BENCH_WARMUP=0.5 |
 
+### CRYSTAL_WORKERS Scaling (dataset 20000)
+
+Worker pool (`bench worker_pool`, BENCH_DATASET=20000):
+
+| CRYSTAL_WORKERS | Fastest Variant | IPS | Notes |
+| --- | --- | --- | --- |
+| 1 | fiber parallel matcher | 27.58 | sequential 26.96 |
+| 2 | spawn parallel matcher | 28.39 | fiber_pool=27.31 |
+| 4 | cml_pool workers=1 | 26.94 | fiber_pool=26.08 |
+| 8 | fiber_pool workers=1 | 24.11 | sequential 23.32 |
+
+MultiPattern (`bench multi_pattern`, BENCH_DATASET=20000):
+
+| CRYSTAL_WORKERS | score IPS | score_parallel IPS | Notes |
+| --- | --- | --- | --- |
+| 1 | 7.95 | 5.91 | parallel slower |
+| 2 | 6.14 | 4.94 | parallel slower |
+| 4 | 7.59 | 6.28 | parallel slower |
+| 8 | 8.01 | 5.55 | parallel slower |
+
 ### MultiPattern Concurrent Matching
 
 | Implementation | Dataset | Columns | IPS | Notes |

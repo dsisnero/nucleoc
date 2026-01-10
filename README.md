@@ -214,6 +214,11 @@ scores = Nucleoc.parallel_fuzzy_match(haystacks, needle, strategy: :spawn)
 # :pool is an alias for :cml_pool; :auto picks based on batch size.
 ```
 
+Notes:
+- `CRYSTAL_WORKERS=1` tends to favor sequential/fiber paths; pools rarely help.
+- For `CRYSTAL_WORKERS=2`, spawn/fiber often wins at mid-sized batches.
+- MultiPattern `score_parallel` is usually slower than `score` at typical sizes.
+
 #### Custom Worker Pool
 ```crystal
 # Create worker pools with custom size
