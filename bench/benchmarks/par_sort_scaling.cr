@@ -14,7 +14,7 @@ module NucleocBench
           size = config.sort_sizes[idx]
           x.report("par_sort size=#{size}") do
             values = base.dup
-            canceled = Atomic(Bool).new(false)
+            canceled = Nucleoc::ParSort::CancelFlag.new(false)
             Nucleoc::ParSort.par_quicksort(values, canceled) { |a, b| a < b }
           end
         end

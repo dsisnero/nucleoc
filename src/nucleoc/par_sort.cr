@@ -5,6 +5,22 @@ module Nucleoc
   # Parallel quicksort with cancellation support using CML.spawn.
   # Port of Rust's pattern-defeating quicksort algorithm.
   module ParSort
+    class CancellationError < Exception
+    end
+
+    class CancelFlag
+      def initialize(initial : Bool = false)
+        @flag = Atomic(Bool).new(initial)
+      end
+
+      def get : Bool
+        @flag.get
+      end
+
+      def set(value : Bool) : Nil
+        @flag.set(value)
+      end
+    end
     # Debug logging
     DEBUG = false
 
@@ -32,17 +48,26 @@ module Nucleoc
     # Sorts `array` using parallel quicksort.
     # Returns `true` if sorting was canceled.
     def self.par_quicksort(array : Array(T), &is_less : T, T -> Bool) : Bool forall T
-      canceled = Atomic(Bool).new(false)
+      canceled = CancelFlag.new(false)
       par_quicksort(array, canceled, &is_less)
     end
 
     # Sorts `array` using parallel quicksort with external cancellation flag.
     # Returns `true` if sorting was canceled.
-    def self.par_quicksort(array : Array(T), canceled : Atomic(Bool), &is_less : T, T -> Bool) : Bool forall T
+    def self.par_quicksort(array : Array(T), canceled : CancelFlag, &is_less : T, T -> Bool) : Bool forall T
       return true if canceled.get
       return false if array.size <= 1
       limit = limit_for_len(array.size)
-      recurse(array, 0, array.size, is_less, nil, limit, canceled)
+      guarded_is_less = ->(left : T, right : T) do
+        raise CancellationError.new if canceled.get
+        is_less.call(left, right)
+      end
+
+      begin
+        recurse(array, 0, array.size, guarded_is_less, nil, limit, canceled)
+      rescue CancellationError
+        true
+      end
     end
 
     # Recursive sorting function.
@@ -53,7 +78,7 @@ module Nucleoc
       is_less : T, T -> Bool,
       pred : T?,
       limit : UInt32,
-      canceled : Atomic(Bool),
+      canceled : CancelFlag,
     ) : Bool forall T
       # Rust uses loop with tail recursion optimization
       cur_start = start
@@ -149,22 +174,54 @@ module Nucleoc
           end
         else
           # Sort left and right halves in parallel using CML.spawn.
-          left_channel = CML::Chan(Bool).new
-          right_channel = CML::Chan(Bool).new
+          left_channel = CML::Mailbox(Bool).new
+          right_channel = CML::Mailbox(Bool).new
 
           # Spawn left partition fiber.
           CML.spawn do
-            left_channel.send(recurse(array, left_start, left_end, is_less, cur_pred, cur_limit, canceled))
+            result = begin
+              recurse(array, left_start, left_end, is_less, cur_pred, cur_limit, canceled)
+            rescue CancellationError
+              true
+            end
+            left_channel.send(result)
           end
 
           # Spawn right partition fiber.
           CML.spawn do
-            right_channel.send(recurse(array, right_start, right_end, is_less, pivot_value, cur_limit, canceled))
+            result = begin
+              recurse(array, right_start, right_end, is_less, pivot_value, cur_limit, canceled)
+            rescue CancellationError
+              true
+            end
+            right_channel.send(result)
           end
 
-          # Wait for both fibers to complete.
-          left_result = left_channel.recv
-          right_result = right_channel.recv
+          # Wait for both fibers to complete (or exit early if canceled).
+          left_done = false
+          right_done = false
+          left_result = false
+          right_result = false
+
+          until left_done && right_done
+            return true if canceled.get
+
+            unless left_done
+              if value = left_channel.recv_poll
+                left_result = value
+                left_done = true
+              end
+            end
+
+            unless right_done
+              if value = right_channel.recv_poll
+                right_result = value
+                right_done = true
+              end
+            end
+
+            Fiber.yield unless left_done && right_done
+          end
 
           return left_result || right_result
         end
@@ -177,7 +234,7 @@ module Nucleoc
       start : Int32,
       end_idx : Int32,
       is_less : T, T -> Bool,
-      canceled : Atomic(Bool),
+      canceled : CancelFlag,
     ) : Bool forall T
       ((start + 1)...end_idx).each do |i|
         return true if canceled.get
@@ -269,7 +326,7 @@ module Nucleoc
       end_idx : Int32,
       pivot_idx : Int32,
       is_less : T, T -> Bool,
-      canceled : Atomic(Bool),
+      canceled : CancelFlag,
     ) : {Int32, Bool} forall T
       debug_puts "  partition start=#{start} end=#{end_idx} pivot_idx=#{pivot_idx} pivot_value=#{array[pivot_idx]}"
       debug_puts "  slice before: #{array[start...end_idx]}"
@@ -311,7 +368,7 @@ module Nucleoc
       start : Int32,
       end_idx : Int32,
       is_less : T, T -> Bool,
-      canceled : Atomic(Bool),
+      canceled : CancelFlag,
     ) : Bool forall T
       len = end_idx - start
       return false if len <= 1
@@ -337,7 +394,7 @@ module Nucleoc
       end_idx : Int32,
       root : Int32,
       is_less : T, T -> Bool,
-      canceled : Atomic(Bool),
+      canceled : CancelFlag,
     ) : Bool forall T
       len = end_idx - start
       while (child = 2 * root + 1) < len

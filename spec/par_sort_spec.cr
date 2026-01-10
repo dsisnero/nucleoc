@@ -4,7 +4,7 @@ require "../src/nucleoc/par_sort"
 module Nucleoc
   describe ParSort do
     it "sorts empty array" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [] of Int32
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -12,7 +12,7 @@ module Nucleoc
     end
 
     it "sorts single element array" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [42]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -20,7 +20,7 @@ module Nucleoc
     end
 
     it "sorts small sorted array" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [1, 2, 3, 4, 5]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -28,7 +28,7 @@ module Nucleoc
     end
 
     it "sorts small reverse array" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [5, 4, 3, 2, 1]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -36,7 +36,7 @@ module Nucleoc
     end
 
     it "sorts array with all equal elements" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [7, 7, 7, 7, 7, 7, 7]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -44,7 +44,7 @@ module Nucleoc
     end
 
     it "sorts already sorted array with duplicates" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -52,7 +52,7 @@ module Nucleoc
     end
 
     it "sorts reverse sorted array with duplicates" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [5, 5, 4, 4, 3, 3, 2, 2, 1, 1]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -63,7 +63,7 @@ module Nucleoc
       100.times do
         array = Array.new(10) { rand(1000) }
         expected = array.sort
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         ParSort.par_quicksort(array, canceled) { |a, b| a < b }
         array.should eq expected
       end
@@ -73,7 +73,7 @@ module Nucleoc
       20.times do
         array = Array.new(100) { rand(1000) }
         expected = array.sort
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         ParSort.par_quicksort(array, canceled) { |a, b| a < b }
         array.should eq expected
       end
@@ -83,7 +83,7 @@ module Nucleoc
       5.times do
         array = Array.new(1000) { rand(10000) }
         expected = array.sort
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         ParSort.par_quicksort(array, canceled) { |a, b| a < b }
         array.should eq expected
       end
@@ -91,7 +91,7 @@ module Nucleoc
 
     it "handles cancellation before sorting" do
       array = [5, 3, 1, 4, 2]
-      canceled = Atomic(Bool).new(true)
+      canceled = ParSort::CancelFlag.new(true)
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_true
       # array may be partially sorted, but we don't care
@@ -99,7 +99,7 @@ module Nucleoc
 
     it "handles cancellation during sorting (large array)" do
       array = Array.new(3000) { rand(10000) }
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       done = Channel(Bool).new
 
       spawn do
@@ -120,7 +120,7 @@ module Nucleoc
     it "sorts large array in parallel without deadlock" do
       array = Array.new(3000) { rand(100000) }
       expected = array.sort
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       done = Channel(Bool).new
 
       spawn do
@@ -140,7 +140,7 @@ module Nucleoc
 
     it "handles cancellation during parallel sort without deadlock" do
       array = Array.new(3000) { rand(100000) }
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       done = Channel(Bool).new
 
       spawn do
@@ -168,7 +168,7 @@ module Nucleoc
     it "cancels sorting from another fiber" do
       # Create a large array to ensure sorting takes some time
       array = Array.new(2000) { rand(10000) }
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
 
       # Start sorting in a fiber
       spawn do
@@ -189,7 +189,7 @@ module Nucleoc
     end
 
     it "sorts in descending order with custom comparator" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = [5, 3, 8, 1, 2, 9, 4, 7, 6, 0]
       # Sort descending: a > b instead of a < b
       result = ParSort.par_quicksort(array, canceled) { |a, b| a > b }
@@ -198,7 +198,7 @@ module Nucleoc
     end
 
     it "sorts strings with custom comparator" do
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       array = ["banana", "apple", "cherry", "date", "fig"]
       result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       result.should be_false
@@ -217,7 +217,7 @@ module Nucleoc
             rng = Random.new(seed)
             array = Array.new(size) { rng.rand(10000) }
             expected = array.sort
-            canceled = Atomic(Bool).new(false)
+            canceled = ParSort::CancelFlag.new(false)
             result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
             result.should be_false
             array.should eq expected
@@ -226,7 +226,7 @@ module Nucleoc
       end
 
       it "handles arrays with many duplicates" do
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         # Array with only 3 distinct values repeated many times
         array = Array.new(1000) { [1, 2, 3].sample }
         expected = array.sort
@@ -236,7 +236,7 @@ module Nucleoc
       end
 
       it "handles arrays with descending pattern" do
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         # Create strictly descending array
         array = (1000.downto(1)).to_a
         expected = array.sort
@@ -246,7 +246,7 @@ module Nucleoc
       end
 
       it "handles arrays with ascending pattern" do
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         # Create strictly ascending array (already sorted)
         array = (1..1000).to_a
         expected = array.sort
@@ -261,7 +261,7 @@ module Nucleoc
     pending "sorts large array in parallel" do
       array = Array.new(3000) { rand(100000) }
       expected = array.sort
-      canceled = Atomic(Bool).new(false)
+      canceled = ParSort::CancelFlag.new(false)
       ParSort.par_quicksort(array, canceled) { |a, b| a < b }
       array.should eq expected
     end

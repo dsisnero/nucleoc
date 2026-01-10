@@ -132,7 +132,7 @@ module Nucleoc
           end
         end
       else
-        canceled = Atomic(Bool).new(false)
+        canceled = ParSort::CancelFlag.new(false)
         ParSort.par_quicksort(array, canceled, &is_less)
       end
       array

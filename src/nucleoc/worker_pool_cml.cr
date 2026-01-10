@@ -97,7 +97,7 @@ module Nucleoc
     # Submit a batch of haystacks to match against a single needle,
     # returning results sorted by score descending (higher scores first).
     # Returns sorted scores and indices (if requested).
-    def match_many_sorted(haystacks : Array(String), needle : String, compute_indices : Bool = false, cancelled : Atomic(Bool)? = nil, timeout : Time::Span? = nil) : {Array(UInt16?), Array(Array(UInt32)?)?}
+    def match_many_sorted(haystacks : Array(String), needle : String, compute_indices : Bool = false, cancelled : ParSort::CancelFlag? = nil, timeout : Time::Span? = nil) : {Array(UInt16?), Array(Array(UInt32)?)?}
       return {[] of UInt16?, nil} if haystacks.empty?
 
       scores, indices = collect_batch_results(haystacks, needle, compute_indices, timeout)
@@ -106,7 +106,7 @@ module Nucleoc
       end
 
       # Sort matches using parallel quicksort
-      cancel_flag = cancelled || Atomic(Bool).new(false)
+      cancel_flag = cancelled || ParSort::CancelFlag.new(false)
       ParSort.par_quicksort(matches, cancel_flag) do |a, b|
         # Sort by score descending (higher score first)
         # Nil scores (no match) go to the end
