@@ -206,21 +206,42 @@ module Nucleoc
           until left_done && right_done
             return true if canceled.get
 
+            events = [] of CML::Event(Tuple(Symbol, Bool) | Symbol)
             unless left_done
-              if value = left_channel.recv_poll
-                left_result = value
-                left_done = true
+              left_evt = CML.wrap(left_channel.recv_evt) do |value|
+                {:left, value}.as(Tuple(Symbol, Bool) | Symbol)
               end
+              events << left_evt
+            end
+            unless right_done
+              right_evt = CML.wrap(right_channel.recv_evt) do |value|
+                {:right, value}.as(Tuple(Symbol, Bool) | Symbol)
+              end
+              events << right_evt
             end
 
-            unless right_done
-              if value = right_channel.recv_poll
-                right_result = value
+            timeout_evt = CML.wrap(CML.timeout(2.milliseconds)) do
+              :timeout.as(Tuple(Symbol, Bool) | Symbol)
+            end
+            events << timeout_evt
+
+            result = CML.sync(CML.choose(events))
+
+            case result
+            when Tuple(Symbol, Bool)
+              case result[0]
+              when :left
+                left_result = result[1]
+                left_done = true
+              when :right
+                right_result = result[1]
                 right_done = true
               end
+            when :timeout
+              next
+            else
+              return true
             end
-
-            Fiber.yield unless left_done && right_done
           end
 
           return left_result || right_result

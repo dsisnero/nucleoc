@@ -33,7 +33,7 @@ describe Nucleoc::ErrorHandling do
     end
 
     it "returns exception when error occurs" do
-      evt = CML.guard { raise "Test error" }
+      evt = CML.guard { raise "Test error"; CML.always(0) }
       wrapped = Nucleoc::ErrorHandling.with_error_propagation(evt)
       result = CML.sync(wrapped)
       result.should be_a(Exception)
