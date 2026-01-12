@@ -210,13 +210,9 @@ describe Nucleoc::CMLWorkerPool do
     scores.should eq expected
   end
 
-  pending "timeout may not fire due to fast matching" do
-    # This test uses the single match timeout method
+  it "times out immediately when timeout is zero" do
     pool = Nucleoc::CMLWorkerPool.new(2)
-    # Use extremely short timeout - should timeout
-
-    score, indices = pool.match_with_timeout("hello world", "hlo", 1.millisecond)
-
+    score, indices = pool.match_with_timeout("hello world", "hlo", 0.milliseconds)
     score.should be_nil
     indices.should be_nil
   end

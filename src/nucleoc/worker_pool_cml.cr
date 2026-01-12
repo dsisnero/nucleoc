@@ -145,6 +145,8 @@ module Nucleoc
 
     # Submit single match with timeout using CML.choose
     def match_with_timeout(haystack : String, needle : String, timeout : Time::Span = 5.seconds, compute_indices : Bool = false) : {UInt16?, Array(UInt32)?}
+      return {nil, nil} if timeout <= 0.seconds
+
       response_ch = CML::Mailbox(TaskResult).new
       normalized_needle = normalize_needle(needle)
       task = Task.new(0, haystack, normalized_needle, compute_indices, response_ch)

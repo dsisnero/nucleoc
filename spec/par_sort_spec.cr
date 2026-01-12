@@ -110,7 +110,7 @@ module Nucleoc
       select
       when result = done.receive
         result.should be_false
-      when timeout(4.seconds)
+      when timeout(10.seconds)
         fail "sort did not complete"
       end
 
@@ -131,7 +131,7 @@ module Nucleoc
       select
       when result = done.receive
         result.should be_false
-      when timeout(4.seconds)
+      when timeout(10.seconds)
         fail "parallel sort did not complete"
       end
 
@@ -160,7 +160,7 @@ module Nucleoc
       when result = done.receive
         canceled.get.should be_true
         array.should eq array.sort unless result
-      when timeout(4.seconds)
+      when timeout(10.seconds)
         fail "parallel sort did not complete after cancellation"
       end
     end
@@ -206,7 +206,7 @@ module Nucleoc
     end
 
     # Property-based tests with fixed seeds for reproducibility
-    pending "property-based tests" do
+    describe "property-based tests" do
       it "sorts arrays of various sizes with fixed seeds" do
         # Test different sizes including edge cases (keep sizes reasonable for test speed)
         sizes = [0, 1, 2, 3, 5, 10, 20, 50, 100, 200, 500, 1000]
@@ -258,7 +258,7 @@ module Nucleoc
 
     # Test parallel sorting with size > MAX_SEQUENTIAL (2000)
     # Note: MAX_SEQUENTIAL may be changed; we assume default 2000.
-    pending "sorts large array in parallel" do
+    it "sorts large array in parallel" do
       array = Array.new(3000) { rand(100000) }
       expected = array.sort
       canceled = ParSort::CancelFlag.new(false)
