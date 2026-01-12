@@ -141,7 +141,7 @@ module Nucleoc
         # Split into left and right partitions.
         left_start = cur_start
         left_end = mid
-        right_start = mid
+        right_start = mid + 1
         right_end = cur_end
         pivot_value = array[mid]?
 
