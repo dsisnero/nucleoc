@@ -124,8 +124,12 @@ module Nucleoc
         # Handle equal elements case (pred predecessor).
         if cur_pred && !is_less.call(cur_pred.as(T), array[pivot_idx])
           # All elements equal to pivot; skip sorting them.
-          # TODO: implement partition_equal
-          # For now, we'll just continue (may cause issues with duplicates)
+          mid = partition_equal(array, cur_start, cur_end, pivot_idx, is_less, canceled)
+          return true if canceled.get
+          cur_start = mid
+          was_balanced = true
+          was_partitioned = true
+          next
         end
 
         # Partition the slice.
@@ -220,7 +224,7 @@ module Nucleoc
               events << right_evt
             end
 
-            timeout_evt = CML.wrap(CML.timeout(2.milliseconds)) do
+            timeout_evt = CML.wrap(CML.timeout(20.milliseconds)) do
               :timeout.as(Tuple(Symbol, Bool) | Symbol)
             end
             events << timeout_evt
@@ -247,6 +251,45 @@ module Nucleoc
           return left_result || right_result
         end
       end
+    end
+
+    # Partition into elements equal to pivot followed by elements greater than pivot.
+    # Assumes there are no elements smaller than the pivot in the slice.
+    private def self.partition_equal(
+      array : Array(T),
+      start : Int32,
+      end_idx : Int32,
+      pivot_idx : Int32,
+      is_less : T, T -> Bool,
+      canceled : CancelFlag,
+    ) : Int32 forall T
+      return start if canceled.get
+
+      array.swap(start, pivot_idx)
+      pivot = array[start]
+
+      left = start + 1
+      right = end_idx
+
+      loop do
+        return left if canceled.get
+
+        while left < right && !is_less.call(pivot, array[left])
+          left += 1
+        end
+
+        while left < right && is_less.call(pivot, array[right - 1])
+          right -= 1
+        end
+
+        break if left >= right
+
+        right -= 1
+        array.swap(left, right)
+        left += 1
+      end
+
+      left
     end
 
     # Simple insertion sort for small slices.
