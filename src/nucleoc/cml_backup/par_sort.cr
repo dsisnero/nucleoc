@@ -21,6 +21,7 @@ module Nucleoc
         @flag.set(value)
       end
     end
+
     # Debug logging
     DEBUG = false
 

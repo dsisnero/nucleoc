@@ -204,8 +204,6 @@ module Nucleoc
 
                 indices = if task.compute_indices?
                             score ? indices_buffer.dup : EMPTY_INDICES
-                          else
-                            nil
                           end
                 task.reply_channel.send(TaskResult.new(task.id, score, indices))
               when BatchTask

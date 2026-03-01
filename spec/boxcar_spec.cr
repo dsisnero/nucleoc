@@ -1,12 +1,12 @@
 require "./spec_helper"
-require "../src/nucleoc/boxcar"
+require "../src/nucleoc/boxcar_native"
 
-describe Nucleoc::BoxcarVector do
+describe Nucleoc::Boxcar do
   describe "basic operations" do
     it "pushes and retrieves values" do
-      vec = Nucleoc::BoxcarVector(Int32).new
-      idx1 = vec.push(42)
-      idx2 = vec.push(100)
+      vec = Nucleoc::Boxcar(Int32).new
+      idx1 = vec.push(42) { |value, columns| }
+      idx2 = vec.push(100) { |value, columns| }
 
       idx1.should eq 0
       idx2.should eq 1
@@ -16,23 +16,25 @@ describe Nucleoc::BoxcarVector do
     end
 
     it "returns size" do
-      vec = Nucleoc::BoxcarVector(String).new
+      vec = Nucleoc::Boxcar(String).new
       vec.size.should eq 0
-      vec.push("a")
+
+      vec.push("a") { |value, columns| }
       vec.size.should eq 1
-      vec.push("b")
+
+      vec.push("b") { |value, columns| }
       vec.size.should eq 2
     end
 
     it "gets with bang method" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push(99)
       vec.get!(0).should eq 99
       expect_raises(IndexError) { vec.get!(1) }
     end
 
     it "handles push_all with small batch" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push_all([1, 2, 3, 4, 5])
       vec.size.should eq 5
       (0...5).each do |i|
@@ -41,30 +43,28 @@ describe Nucleoc::BoxcarVector do
     end
 
     it "creates snapshot" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       10.times { |i| vec.push(i) }
 
       snapshot = vec.snapshot
-      result = [] of Int32
-      snapshot.each { |v| result << v }
-      result.should eq (0...10).to_a
+      snapshot.should eq (0...10).to_a
 
       # Snapshot should be immutable (won't see new elements)
       vec.push(99)
       snapshot2 = vec.snapshot
-      snapshot2.to_a.size.should eq 11
+      snapshot2.size.should eq 11
     end
 
     it "handles snapshot with start index" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       20.times { |i| vec.push(i) }
 
       snapshot = vec.snapshot(5)
-      snapshot.to_a.should eq (5...20).to_a
+      snapshot.should eq (5...20).to_a
     end
 
     it "clears vector" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       10.times { |i| vec.push(i) }
       vec.size.should eq 10
 
@@ -80,7 +80,7 @@ describe Nucleoc::BoxcarVector do
 
   describe "bucket allocation" do
     it "grows buckets automatically" do
-      vec = Nucleoc::BoxcarVector(Int32).new(initial_capacity: 10)
+      vec = Nucleoc::Boxcar(Int32).new
       # Should allocate first bucket (size 32)
       40.times { |i| vec.push(i) }
 
@@ -92,7 +92,7 @@ describe Nucleoc::BoxcarVector do
     end
 
     it "handles large number of elements" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       count = 10_000
 
       count.times { |i| vec.push(i) }
@@ -109,24 +109,24 @@ describe Nucleoc::BoxcarVector do
 
   describe "parallel operations" do
     it "pushes from multiple fibers concurrently" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       fiber_count = 10
       pushes_per_fiber = 100
 
-      # Use CML.spawn for concurrent pushes
-      completion_channel = CML::Chan(Nil).new
+      # Use native Crystal spawn for concurrent pushes
+      completion_channels = Array(Channel(Nil)).new(fiber_count) { Channel(Nil).new }
 
       fiber_count.times do |i|
-        CML.spawn do
+        spawn do
           pushes_per_fiber.times do |j|
             vec.push(i * 1000 + j)
           end
-          completion_channel.send(nil)
+          completion_channels[i].send(nil)
         end
       end
 
       # Wait for all fibers to complete
-      fiber_count.times { completion_channel.recv }
+      completion_channels.each(&.receive)
 
       # All values should be stored (order not guaranteed)
       vec.size.should eq fiber_count * pushes_per_fiber
@@ -141,8 +141,8 @@ describe Nucleoc::BoxcarVector do
       count.should eq vec.size
     end
 
-    it "uses push_all with CML.spawn for large batches" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+    it "uses push_all for large batches" do
+      vec = Nucleoc::Boxcar(Int32).new
       values = Array.new(1000) { |i| i }
 
       vec.push_all(values)
@@ -150,11 +150,11 @@ describe Nucleoc::BoxcarVector do
 
       # All values should be present (order preserved due to sequential indices)
       snapshot = vec.snapshot
-      snapshot.to_a.should eq values
+      snapshot.should eq values
     end
 
     it "supports parallel snapshot processing" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       1000.times { |i| vec.push(i) }
 
       # Use parallel snapshot to sum values
@@ -170,7 +170,7 @@ describe Nucleoc::BoxcarVector do
 
   describe "edge cases" do
     it "handles empty vector" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.size.should eq 0
       vec.get(0).should be_nil
       vec.snapshot.to_a.should be_empty
@@ -178,13 +178,13 @@ describe Nucleoc::BoxcarVector do
     end
 
     it "handles negative indices" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push(42)
       vec.get(-1).should be_nil
     end
 
     it "handles zero initial capacity" do
-      vec = Nucleoc::BoxcarVector(Int32).new(initial_capacity: 0)
+      vec = Nucleoc::Boxcar(Int32).new
       vec.size.should eq 0
       vec.push(1)
       vec.size.should eq 1
@@ -193,36 +193,36 @@ describe Nucleoc::BoxcarVector do
 
   describe "sorting" do
     it "sorts snapshot with comparator" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push_all([5, 3, 8, 1, 2])
-      sorted = vec.sort_snapshot { |a, b| a < b }
+      sorted = vec.sort_snapshot { |a, b| a <=> b }
       sorted.should eq [1, 2, 3, 5, 8]
     end
 
     it "sorts snapshot with start index" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       10.times { |i| vec.push(i) }
-      sorted = vec.sort_snapshot(5) { |a, b| a < b }
+      sorted = vec.sort_snapshot(5) { |a, b| a <=> b }
       sorted.should eq (5...10).to_a
     end
 
     it "sorts snapshot descending" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push_all([5, 3, 8, 1, 2])
-      sorted = vec.sort_snapshot { |a, b| a > b }
+      sorted = vec.sort_snapshot { |a, b| b <=> a }
       sorted.should eq [8, 5, 3, 2, 1]
     end
 
     it "handles empty snapshot" do
-      vec = Nucleoc::BoxcarVector(Int32).new
-      sorted = vec.sort_snapshot { |a, b| a < b }
+      vec = Nucleoc::Boxcar(Int32).new
+      sorted = vec.sort_snapshot { |a, b| a <=> b }
       sorted.should eq [] of Int32
     end
 
     it "handles single element snapshot" do
-      vec = Nucleoc::BoxcarVector(Int32).new
+      vec = Nucleoc::Boxcar(Int32).new
       vec.push(42)
-      sorted = vec.sort_snapshot { |a, b| a < b }
+      sorted = vec.sort_snapshot { |a, b| a <=> b }
       sorted.should eq [42]
     end
   end

@@ -1,3 +1,5 @@
+require "./chars"
+
 # Configuration for the nucleoc matcher
 module Nucleoc
   # Score constants

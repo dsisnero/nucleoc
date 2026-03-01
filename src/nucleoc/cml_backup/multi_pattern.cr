@@ -123,7 +123,7 @@ module Nucleoc
         col_idx, column_score = result_ch.recv
         scores[col_idx] = column_score
       end
-      return if scores.any?(&.nil?)
+      return if scores.any?(Nil)
 
       scores.reduce(0_u16) { |sum, score| sum + score.as(UInt16) }
     end
@@ -176,7 +176,7 @@ module Nucleoc
         end
       end
 
-      return if scores.any?(&.nil?)
+      return if scores.any?(Nil)
       scores.reduce(0_u16) { |sum, score| sum + score.as(UInt16) }
     end
   end

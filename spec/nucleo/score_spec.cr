@@ -26,9 +26,11 @@ describe "Score tests" do
 
       # Test with Nucleo wrapper
       config = Nucleoc::Config.new
-      nucleo = Nucleoc::Nucleo(Int32).new(config, -> { 0 }, 1, 1)
+      nucleo = Nucleoc::Nucleo(Int32).new(config, -> { }, 1, 1)
 
-      matches = nucleo.match_list([haystack], pattern)
+      # Note: nucleo.match_list doesn't exist in native implementation
+      # Using module method instead
+      matches = Nucleoc.match_list([haystack], pattern, config)
       matches.size.should eq(1)
       matches[0].item.should eq(haystack)
       matches[0].score.should eq(result)

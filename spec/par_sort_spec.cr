@@ -1,12 +1,12 @@
 require "./spec_helper"
-require "../src/nucleoc/par_sort"
+require "../src/nucleoc/par_sort_native"
 
 module Nucleoc
   describe ParSort do
     it "sorts empty array" do
       canceled = ParSort::CancelFlag.new(false)
       array = [] of Int32
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [] of Int32
     end
@@ -14,7 +14,7 @@ module Nucleoc
     it "sorts single element array" do
       canceled = ParSort::CancelFlag.new(false)
       array = [42]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [42]
     end
@@ -22,7 +22,7 @@ module Nucleoc
     it "sorts small sorted array" do
       canceled = ParSort::CancelFlag.new(false)
       array = [1, 2, 3, 4, 5]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [1, 2, 3, 4, 5]
     end
@@ -30,7 +30,7 @@ module Nucleoc
     it "sorts small reverse array" do
       canceled = ParSort::CancelFlag.new(false)
       array = [5, 4, 3, 2, 1]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [1, 2, 3, 4, 5]
     end
@@ -38,7 +38,7 @@ module Nucleoc
     it "sorts array with all equal elements" do
       canceled = ParSort::CancelFlag.new(false)
       array = [7, 7, 7, 7, 7, 7, 7]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [7, 7, 7, 7, 7, 7, 7]
     end
@@ -46,7 +46,7 @@ module Nucleoc
     it "sorts already sorted array with duplicates" do
       canceled = ParSort::CancelFlag.new(false)
       array = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
     end
@@ -54,7 +54,7 @@ module Nucleoc
     it "sorts reverse sorted array with duplicates" do
       canceled = ParSort::CancelFlag.new(false)
       array = [5, 5, 4, 4, 3, 3, 2, 2, 1, 1]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_false
       array.should eq [1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
     end
@@ -64,7 +64,7 @@ module Nucleoc
         array = Array.new(10) { rand(1000) }
         expected = array.sort
         canceled = ParSort::CancelFlag.new(false)
-        ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         array.should eq expected
       end
     end
@@ -74,7 +74,7 @@ module Nucleoc
         array = Array.new(100) { rand(1000) }
         expected = array.sort
         canceled = ParSort::CancelFlag.new(false)
-        ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         array.should eq expected
       end
     end
@@ -84,7 +84,7 @@ module Nucleoc
         array = Array.new(1000) { rand(10000) }
         expected = array.sort
         canceled = ParSort::CancelFlag.new(false)
-        ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         array.should eq expected
       end
     end
@@ -92,7 +92,7 @@ module Nucleoc
     it "handles cancellation before sorting" do
       array = [5, 3, 1, 4, 2]
       canceled = ParSort::CancelFlag.new(true)
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       result.should be_true
       # array may be partially sorted, but we don't care
     end
@@ -103,7 +103,7 @@ module Nucleoc
       done = Channel(Bool).new
 
       spawn do
-        result = ParSort.par_quicksort(array, canceled) { |left, right| left < right }
+        result = ParSort.sort(array, canceled: canceled)
         done.send(result)
       end
 
@@ -124,7 +124,7 @@ module Nucleoc
       done = Channel(Bool).new
 
       spawn do
-        result = ParSort.par_quicksort(array, canceled) { |left, right| left < right }
+        result = ParSort.sort(array, canceled: canceled)
         done.send(result)
       end
 
@@ -144,10 +144,10 @@ module Nucleoc
       done = Channel(Bool).new
 
       spawn do
-        result = ParSort.par_quicksort(array, canceled) do |left, right|
+        result = ParSort.sort(array, ->(left : Int32, right : Int32) do
           sleep 10.microseconds
           left < right
-        end
+        end, canceled: canceled)
         done.send(result)
       end
 
@@ -172,7 +172,7 @@ module Nucleoc
 
       # Start sorting in a fiber
       spawn do
-        ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       end
 
       # Cancel from main fiber after a short delay
@@ -192,7 +192,7 @@ module Nucleoc
       canceled = ParSort::CancelFlag.new(false)
       array = [5, 3, 8, 1, 2, 9, 4, 7, 6, 0]
       # Sort descending: a > b instead of a < b
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a > b }
+      result = ParSort.sort(array, ->(a : Int32, b : Int32) { a > b }, canceled)
       result.should be_false
       array.should eq [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]
     end
@@ -200,7 +200,7 @@ module Nucleoc
     it "sorts strings with custom comparator" do
       canceled = ParSort::CancelFlag.new(false)
       array = ["banana", "apple", "cherry", "date", "fig"]
-      result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      result = ParSort.sort(array, ->(a : String, b : String) { a < b }, canceled)
       result.should be_false
       array.should eq ["apple", "banana", "cherry", "date", "fig"]
     end
@@ -218,7 +218,7 @@ module Nucleoc
             array = Array.new(size) { rng.rand(10000) }
             expected = array.sort
             canceled = ParSort::CancelFlag.new(false)
-            result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+            result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
             result.should be_false
             array.should eq expected
           end
@@ -230,7 +230,7 @@ module Nucleoc
         # Array with only 3 distinct values repeated many times
         array = Array.new(1000) { [1, 2, 3].sample }
         expected = array.sort
-        result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         result.should be_false
         array.should eq expected
       end
@@ -240,7 +240,7 @@ module Nucleoc
         # Create strictly descending array
         array = (1000.downto(1)).to_a
         expected = array.sort
-        result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         result.should be_false
         array.should eq expected
       end
@@ -250,7 +250,7 @@ module Nucleoc
         # Create strictly ascending array (already sorted)
         array = (1..1000).to_a
         expected = array.sort
-        result = ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+        result = ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
         result.should be_false
         array.should eq expected
       end
@@ -262,7 +262,7 @@ module Nucleoc
       array = Array.new(3000) { rand(100000) }
       expected = array.sort
       canceled = ParSort::CancelFlag.new(false)
-      ParSort.par_quicksort(array, canceled) { |a, b| a < b }
+      ParSort.sort(array, ->(a : Int32, b : Int32) { a < b }, canceled)
       array.should eq expected
     end
   end

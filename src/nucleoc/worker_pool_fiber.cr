@@ -1,3 +1,5 @@
+require "./config"
+
 module Nucleoc
   # Fiber-only worker pool using Crystal's Channel and spawn.
   class FiberWorkerPool

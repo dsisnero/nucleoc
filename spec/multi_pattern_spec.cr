@@ -1,5 +1,5 @@
 require "./spec_helper"
-require "../src/nucleoc/multi_pattern"
+require "../src/nucleoc/multi_pattern_native"
 
 module Nucleoc
   describe MultiPattern do

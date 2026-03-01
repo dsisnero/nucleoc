@@ -13,8 +13,6 @@ targets:
     main: src/nucleoc.cr
 
 dependencies:
-  cml:
-    github: dsisnero/cml
 
 development_dependencies:
   ameba:

@@ -7,12 +7,12 @@ require "./nucleoc/score"
 require "./nucleoc/matcher"
 require "./nucleoc/pattern"
 require "./nucleoc/prefilter"
-require "./nucleoc/boxcar"
-require "./nucleoc/worker_pool"
-require "./nucleoc/worker_pool_cml"
+require "./nucleoc/boxcar_native"
+require "./nucleoc/worker_pool_native"
 require "./nucleoc/worker_pool_fiber"
+require "./nucleoc/par_sort_native"
+require "./nucleoc/multi_pattern_native"
 require "./nucleoc/api"
-require "./nucleoc/error_handling"
 
 Log.setup_from_env
 
