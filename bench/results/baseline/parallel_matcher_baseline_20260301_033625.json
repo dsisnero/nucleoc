@@ -1,0 +1,221 @@
+{
+  "timestamp": "2026-03-01T03:36:25Z",
+  "git_commit": "3f4f34c",
+  "git_branch": "main",
+  "benchmark_name": "parallel_matcher_baseline",
+  "config": {
+    "benchmark_type": "parallel_matcher_baseline",
+    "test_sizes": [
+      100,
+      1000,
+      10000
+    ],
+    "timestamp": "2026-03-01 03:36:25 UTC"
+  },
+  "results": {
+    "100_items": {
+      "empty": {
+        "single_threaded": {
+          "iterations_per_second": 66535.06850904088,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 66854.26740480594,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 66970.65496136576,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 67970.56704450557,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 68264.623375605,
+          "allocation_bytes": 0
+        }
+      },
+      "simple": {
+        "single_threaded": {
+          "iterations_per_second": 70050.47065812458,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 68630.63877991044,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 69416.30499266469,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 69070.42298410244,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 68250.14018367999,
+          "allocation_bytes": 0
+        }
+      },
+      "no_match": {
+        "single_threaded": {
+          "iterations_per_second": 79774.92973954261,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 77881.61059194704,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 77779.71485956533,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 77180.48849731327,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 76902.87198867368,
+          "allocation_bytes": 0
+        }
+      }
+    },
+    "1000_items": {
+      "empty": {
+        "single_threaded": {
+          "iterations_per_second": 7024.112859694437,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 6502.709212221374,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 5977.19158483815,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 6606.339060658725,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 6707.824469649278,
+          "allocation_bytes": 0
+        }
+      },
+      "simple": {
+        "single_threaded": {
+          "iterations_per_second": 6945.7898898558315,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 6736.341741698813,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 6388.630162697774,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 6703.967593020655,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 6734.994236370705,
+          "allocation_bytes": 0
+        }
+      },
+      "no_match": {
+        "single_threaded": {
+          "iterations_per_second": 7700.423338321479,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 7617.028828824325,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 7005.75712441201,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 7427.64347311329,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 7527.244129199034,
+          "allocation_bytes": 0
+        }
+      }
+    },
+    "10000_items": {
+      "empty": {
+        "single_threaded": {
+          "iterations_per_second": 676.3837256241557,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 720.5699094001903,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 679.633847264786,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 715.3413494524917,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 704.3323171560538,
+          "allocation_bytes": 0
+        }
+      },
+      "simple": {
+        "single_threaded": {
+          "iterations_per_second": 736.8454854406651,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 723.0286717139606,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 687.9897517365649,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 712.1484141232795,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 717.6326323733659,
+          "allocation_bytes": 0
+        }
+      },
+      "no_match": {
+        "single_threaded": {
+          "iterations_per_second": 820.5927523594946,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match": {
+          "iterations_per_second": 819.8119892372604,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_match_fiber": {
+          "iterations_per_second": 768.1755829903977,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices": {
+          "iterations_per_second": 802.6418625466546,
+          "allocation_bytes": 0
+        },
+        "parallel_fuzzy_indices_fiber": {
+          "iterations_per_second": 797.8662233660607,
+          "allocation_bytes": 0
+        }
+      }
+    }
+  }
+}

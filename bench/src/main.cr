@@ -5,6 +5,7 @@ require "../benchmarks/worker_pool_throughput"
 require "../benchmarks/multi_pattern_matching"
 require "../benchmarks/top_k_selection"
 require "../benchmarks/nucleo_snapshot"
+require "../benchmarks/parallel_matcher_simple"
 
 module NucleocBench
   BENCHMARKS = {
@@ -14,6 +15,7 @@ module NucleocBench
     "multi_pattern" => MultiPatternMatching,
     "top_k"         => TopKSelection,
     "nucleo"        => NucleoSnapshot,
+    "parallel"      => ParallelMatcherSimple,
   }
 
   def self.run_all(config : Config)
@@ -49,6 +51,13 @@ module NucleocBench
     puts "  BENCH_WARMUP      Warmup seconds (default 2.0)"
     puts "  BENCH_CALC        Calculation seconds (default 5.0)"
     puts "  CRYSTAL_WORKERS   Thread count for CML.spawn scaling"
+    puts ""
+    puts "Parallel matcher benchmark tests:"
+    puts "  - Different dataset sizes: 100, 1k, 10k, 50k, 100k"
+    puts "  - Different pattern types: empty, simple, camel case, multi-word, no-match"
+    puts "  - All parallel methods: match, match_fiber, indices, indices_fiber"
+    puts "  - Memory usage tracking"
+    puts "  - Chunk size sensitivity analysis"
   end
 end
 

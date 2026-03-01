@@ -288,6 +288,18 @@ module Nucleoc
       matcher = @matchers.first
       pattern = @pattern.column_pattern(0)
 
+      # Fast path: empty pattern matches everything with score 0
+      if pattern.atoms.empty?
+        (start_idx...end_idx).each do |idx|
+          if entry = @items.get_entry(idx.to_i64)
+            if entry.active? && entry.value && entry.matcher_columns
+              @matches << Match.new(0_u16, idx)
+            end
+          end
+        end
+        return
+      end
+
       (start_idx...end_idx).each do |idx|
         if entry = @items.get_entry(idx.to_i64)
           if entry.active? && entry.value && entry.matcher_columns

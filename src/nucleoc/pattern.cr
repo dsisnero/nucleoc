@@ -138,6 +138,9 @@ module Nucleoc
     end
 
     def match(matcher : Matcher, haystack : String, indices : Array(UInt32)? = nil) : UInt16?
+      # Fast path: empty needle matches everything with score 0
+      return 0_u16 if @needle.empty?
+
       matcher.config.ignore_case = @ignore_case
       matcher.config.normalize = @normalize
 
@@ -203,6 +206,9 @@ module Nucleoc
     # Match this pattern against a haystack.
     # Returns the total score if all atoms match, nil otherwise.
     def match(matcher : Matcher, haystack : String, indices : Array(Array(UInt32))? = nil) : UInt16?
+      # Fast path: empty pattern matches everything with score 0
+      return 0_u16 if @atoms.empty?
+
       total_score = 0_u16
       atom_indices = [] of Array(UInt32) if indices
 

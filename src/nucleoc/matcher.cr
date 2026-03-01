@@ -1,6 +1,5 @@
 # Matcher module for nucleoc fuzzy matching library
 require "log"
-require "cml"
 
 module Nucleoc
   # Score cell for tracking matching state in optimal algorithm
@@ -1136,8 +1135,63 @@ module Nucleoc
       calculate_score(haystack_chars, needle_chars, start_idx, start_idx + needle_chars.size, indices)
     end
 
-    # Parallel fuzzy match across multiple haystacks using CML.spawn
+    # Optimized parallel fuzzy match with manual chunking (no Array#each_slice)
     # Returns array of scores in the same order as input
+    def parallel_fuzzy_match_optimized(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(UInt16?)
+      return [] of UInt16? if haystacks.empty?
+
+      parallel_threshold = parallel_threshold_for(haystacks.size)
+      if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
+      end
+
+      # Determine chunk size
+      cpu_count = System.cpu_count
+      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      target_chunks = cpu_count.clamp(1, 16)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+      total_chunks = (haystacks.size + chunk_size - 1) // chunk_size
+
+      # Single channel for all results
+      result_channel = Channel(Tuple(Int32, Array(UInt16?))).new
+      normalized_needle = normalize_needle(needle)
+
+      # Spawn workers with manual chunking (no Array#each_slice allocations)
+      total_chunks.times do |chunk_idx|
+        start_idx = chunk_idx * chunk_size
+        end_idx = Math.min(start_idx + chunk_size, haystacks.size)
+        chunk_length = end_idx - start_idx
+
+        spawn do
+          # Pre-allocate chunk results array
+          chunk_scores = Array(UInt16?).new(chunk_length, nil)
+
+          # Process chunk without slice allocations
+          chunk_length.times do |i|
+            idx = start_idx + i
+            chunk_scores[i] = fuzzy_match_normalized(haystacks[idx], normalized_needle)
+          end
+
+          result_channel.send({start_idx, chunk_scores})
+        end
+      end
+
+      # Collect results
+      results = Array(UInt16?).new(haystacks.size, nil)
+      total_chunks.times do
+        start_idx, chunk_scores = result_channel.receive
+        chunk_scores.each_with_index do |score, idx|
+          results[start_idx + idx] = score
+        end
+      end
+
+      results
+    end
+
+    # Parallel fuzzy match across multiple haystacks using Crystal spawn
+    # Returns array of scores in the same order as input
+    # Uses pre-allocated results array for optimal performance
     def parallel_fuzzy_match(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(UInt16?)
       return [] of UInt16? if haystacks.empty?
 
@@ -1152,31 +1206,72 @@ module Nucleoc
       cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
       target_chunks = cpu_count.clamp(1, 16)
       chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+      total_chunks = (haystacks.size + chunk_size - 1) // chunk_size
 
-      # Create channels for results
-      channels = [] of CML::Chan(Tuple(Int32, Array(UInt16?)))
-      normalized_needle = normalize_needle(needle)
-
-      # Split into chunks and spawn fibers
-      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
-        chan = CML::Chan(Tuple(Int32, Array(UInt16?))).new
-        channels << chan
-        start_idx = chunk_idx * chunk_size
-
-        CML.spawn do
-          chunk_scores = slice.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
-          chan.send({start_idx, chunk_scores})
-        end
-      end
-
-      # Collect results
+      # Pre-allocate results array once
       results = Array(UInt16?).new(haystacks.size, nil)
-      channels.each do |chan|
-        start_idx, chunk_scores = chan.recv
-        chunk_scores.each_with_index do |score, idx|
-          results[start_idx + idx] = score
+      normalized_needle = normalize_needle(needle)
+      completion_channel = Channel(Bool).new
+
+      # Spawn workers that write directly to results array
+      total_chunks.times do |chunk_idx|
+        start_idx = chunk_idx * chunk_size
+        end_idx = Math.min(start_idx + chunk_size, haystacks.size)
+
+        spawn do
+          # Write directly to pre-allocated results array
+          (start_idx...end_idx).each do |idx|
+            results[idx] = fuzzy_match_normalized(haystacks[idx], normalized_needle)
+          end
+          completion_channel.send(true)
         end
       end
+
+      # Wait for all chunks to complete
+      total_chunks.times { completion_channel.receive }
+
+      results
+    end
+
+    # Parallel fuzzy match with pre-allocated results array (most optimized)
+    # Returns array of scores in the same order as input
+    def parallel_fuzzy_match_preallocated(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(UInt16?)
+      return [] of UInt16? if haystacks.empty?
+
+      parallel_threshold = parallel_threshold_for(haystacks.size)
+      if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map { |haystack| fuzzy_match_normalized(haystack, normalized_needle) }
+      end
+
+      # Determine chunk size
+      cpu_count = System.cpu_count
+      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      target_chunks = cpu_count.clamp(1, 16)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+      total_chunks = (haystacks.size + chunk_size - 1) // chunk_size
+
+      # Pre-allocate results array once
+      results = Array(UInt16?).new(haystacks.size, nil)
+      normalized_needle = normalize_needle(needle)
+      completion_channel = Channel(Bool).new
+
+      # Spawn workers that write directly to results array
+      total_chunks.times do |chunk_idx|
+        start_idx = chunk_idx * chunk_size
+        end_idx = Math.min(start_idx + chunk_size, haystacks.size)
+
+        spawn do
+          # Write directly to pre-allocated results array
+          (start_idx...end_idx).each do |idx|
+            results[idx] = fuzzy_match_normalized(haystacks[idx], normalized_needle)
+          end
+          completion_channel.send(true)
+        end
+      end
+
+      # Wait for all chunks to complete
+      total_chunks.times { completion_channel.receive }
 
       results
     end
@@ -1223,54 +1318,18 @@ module Nucleoc
 
     # Parallel fuzzy match with indices
     def parallel_fuzzy_indices(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
-      return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
-
-      parallel_threshold = parallel_threshold_for(haystacks.size)
-      if haystacks.size <= parallel_threshold
-        normalized_needle = normalize_needle(needle)
-        return haystacks.map do |haystack|
-          indices = [] of UInt32
-          score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
-          score ? {score, indices} : nil
-        end
-      end
-
-      cpu_count = System.cpu_count
-      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
-      target_chunks = cpu_count.clamp(1, 16)
-      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
-
-      channels = [] of CML::Chan(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?)))
-      normalized_needle = normalize_needle(needle)
-
-      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
-        chan = CML::Chan(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?))).new
-        channels << chan
-        start_idx = chunk_idx * chunk_size
-
-        CML.spawn do
-          chunk_results = slice.map do |haystack|
-            indices = [] of UInt32
-            score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
-            score ? {score, indices} : nil
-          end
-          chan.send({start_idx, chunk_results})
-        end
-      end
-
-      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
-      channels.each do |chan|
-        start_idx, chunk_results = chan.recv
-        chunk_results.each_with_index do |result, idx|
-          results[start_idx + idx] = result
-        end
-      end
-
-      results
+      # Use the preallocated strategy for better performance
+      parallel_fuzzy_indices_preallocated(haystacks, needle, chunk_size)
     end
 
     # Parallel fuzzy match with indices using Crystal spawn + Channel
     def parallel_fuzzy_indices_fiber(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+      # Use the preallocated strategy for better performance
+      parallel_fuzzy_indices_fiber_preallocated(haystacks, needle, chunk_size)
+    end
+
+    # Parallel fuzzy match with indices using pre-allocated results array
+    def parallel_fuzzy_indices_preallocated(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
       return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
 
       parallel_threshold = parallel_threshold_for(haystacks.size)
@@ -1283,36 +1342,84 @@ module Nucleoc
         end
       end
 
+      # Determine chunk size
       cpu_count = System.cpu_count
       cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
       target_chunks = cpu_count.clamp(1, 16)
       chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+      total_chunks = (haystacks.size + chunk_size - 1) // chunk_size
 
-      channels = [] of Channel(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?)))
+      # Pre-allocate results array once
+      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
       normalized_needle = normalize_needle(needle)
+      completion_channel = Channel(Bool).new
 
-      haystacks.each_slice(chunk_size).with_index do |slice, chunk_idx|
-        chan = Channel(Tuple(Int32, Array(Tuple(UInt16, Array(UInt32))?))).new
-        channels << chan
+      # Spawn workers that write directly to results array
+      total_chunks.times do |chunk_idx|
         start_idx = chunk_idx * chunk_size
+        end_idx = Math.min(start_idx + chunk_size, haystacks.size)
 
         spawn do
-          chunk_results = slice.map do |haystack|
+          # Write directly to pre-allocated results array
+          (start_idx...end_idx).each do |idx|
             indices = [] of UInt32
-            score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
-            score ? {score, indices} : nil
+            score = fuzzy_indices_normalized(haystacks[idx], normalized_needle, indices)
+            results[idx] = score ? {score, indices} : nil
           end
-          chan.send({start_idx, chunk_results})
+          completion_channel.send(true)
         end
       end
 
-      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
-      channels.each do |chan|
-        start_idx, chunk_results = chan.receive
-        chunk_results.each_with_index do |result, idx|
-          results[start_idx + idx] = result
+      # Wait for all chunks to complete
+      total_chunks.times { completion_channel.receive }
+
+      results
+    end
+
+    # Parallel fuzzy match with indices using pre-allocated results array (fiber version)
+    def parallel_fuzzy_indices_fiber_preallocated(haystacks : Array(String), needle : String, chunk_size : Int32? = nil) : Array(Tuple(UInt16, Array(UInt32))?)
+      return [] of Tuple(UInt16, Array(UInt32))? if haystacks.empty?
+
+      parallel_threshold = parallel_threshold_for(haystacks.size)
+      if haystacks.size <= parallel_threshold
+        normalized_needle = normalize_needle(needle)
+        return haystacks.map do |haystack|
+          indices = [] of UInt32
+          score = fuzzy_indices_normalized(haystack, normalized_needle, indices)
+          score ? {score, indices} : nil
         end
       end
+
+      # Determine chunk size
+      cpu_count = System.cpu_count
+      cpu_count = cpu_count.is_a?(Int32) ? cpu_count : cpu_count.to_i32
+      target_chunks = cpu_count.clamp(1, 16)
+      chunk_size = chunk_size || parallel_chunk_size(haystacks.size, target_chunks)
+      total_chunks = (haystacks.size + chunk_size - 1) // chunk_size
+
+      # Pre-allocate results array once
+      results = Array(Tuple(UInt16, Array(UInt32))?).new(haystacks.size, nil)
+      normalized_needle = normalize_needle(needle)
+      completion_channel = Channel(Bool).new
+
+      # Spawn workers that write directly to results array
+      total_chunks.times do |chunk_idx|
+        start_idx = chunk_idx * chunk_size
+        end_idx = Math.min(start_idx + chunk_size, haystacks.size)
+
+        spawn do
+          # Write directly to pre-allocated results array
+          (start_idx...end_idx).each do |idx|
+            indices = [] of UInt32
+            score = fuzzy_indices_normalized(haystacks[idx], normalized_needle, indices)
+            results[idx] = score ? {score, indices} : nil
+          end
+          completion_channel.send(true)
+        end
+      end
+
+      # Wait for all chunks to complete
+      total_chunks.times { completion_channel.receive }
 
       results
     end
