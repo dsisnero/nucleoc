@@ -188,6 +188,63 @@ module Nucleoc
       snapshot(start_index).sort(&block)
     end
 
+    # Get top K elements from snapshot using comparator.
+    # More efficient than full sort when k << n.
+    # The comparator should return:
+    #   negative if a < b
+    #   zero if a == b
+    #   positive if a > b
+    # For top-k largest elements, use standard <=> comparator.
+    # For top-k smallest elements, use reversed comparator.
+    def top_k_snapshot(k : Int32, start_index : Int64 = 0, &block : T, T -> Int32) : Array(T)
+      elements = snapshot(start_index)
+      return elements if k >= elements.size
+
+      # Use a min-heap to keep track of top k LARGEST elements
+      # heap[0] is the smallest element in the heap
+      heap = [] of T
+
+      elements.each do |element|
+        if heap.size < k
+          heap << element
+          if heap.size == k
+            # Build heap: sort in min-heap order (smallest at root)
+            heap.sort! { |a, b| block.call(a, b) }
+          end
+        else
+          # Compare with smallest element in heap
+          # If new element is larger than smallest in heap, replace it
+          if block.call(element, heap[0]) > 0
+            heap[0] = element
+            # Sift down to maintain min-heap property
+            i = 0
+            loop do
+              left = 2 * i + 1
+              right = 2 * i + 2
+              smallest = i
+
+              if left < k && block.call(heap[left], heap[smallest]) < 0
+                smallest = left
+              end
+
+              if right < k && block.call(heap[right], heap[smallest]) < 0
+                smallest = right
+              end
+
+              break if smallest == i
+
+              heap[i], heap[smallest] = heap[smallest], heap[i]
+              i = smallest
+            end
+          end
+        end
+      end
+
+      # Sort result in descending order (largest first)
+      heap.sort! { |a, b| block.call(b, a) }
+      heap
+    end
+
     # Clear all values (resets size to zero but keeps allocated buckets).
     def clear : Nil
       @inflight.set(0)

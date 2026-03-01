@@ -19,11 +19,17 @@ module NucleocBench
 
       Benchmark.ips(calculation: config.calculation, warmup: config.warmup) do |x|
         x.report("multi_pattern score") do
-          rows.each { |row| pattern.score(row, matcher) }
+          rows.each do |row|
+            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s) }
+            pattern.score(utf32_row, matcher)
+          end
         end
 
         x.report("multi_pattern score_parallel") do
-          rows.each { |row| pattern.score_parallel(row, Nucleoc::Config::DEFAULT) }
+          rows.each do |row|
+            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s) }
+            pattern.score_parallel(utf32_row, Nucleoc::Config::DEFAULT)
+          end
         end
       end
     end

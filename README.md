@@ -641,6 +641,38 @@ Nucleoc.parallel_fuzzy_indices(haystacks, needle) → Array(Tuple(UInt16, Array(
 | `a b` | AND (space) | `"hello world"` matches both |
 | `\` | Escape | `"\!hello"` matches literal `"!hello"` |
 
+## Parallel Performance
+
+Nucleoc includes parallel implementations for bulk matching operations. However, for true parallel speedup across multiple CPU cores, you need to compile with Crystal's multithreading preview flag:
+
+```bash
+# Compile with multithreading enabled for parallel speedup
+crystal build -Dpreview_mt your_app.cr
+
+# Or run directly
+crystal run -Dpreview_mt your_app.cr
+```
+
+### Performance Characteristics
+
+- **Without `-Dpreview_mt`**: Fibers run on a single OS thread. Parallel operations still provide ~1.4x speedup from algorithmic optimizations.
+- **With `-Dpreview_mt`**: Fibers can run on multiple OS threads. Expect 2.5-4x speedup for large datasets (10k+ items).
+
+### Parallel APIs
+
+```crystal
+# Parallel fuzzy match (returns scores only)
+scores = Nucleoc.parallel_fuzzy_match(items, "pattern")
+
+# Parallel fuzzy match with indices
+results = Nucleoc.parallel_fuzzy_indices(items, "pattern")
+
+# Parallel top-k match (optimized for limited results)
+top_results = Nucleoc.parallel_top_k_match(items, "pattern", k=100)
+```
+
+The library automatically detects if multithreading is enabled and adjusts its parallel strategy accordingly. Use `strategy: :auto` (default) for automatic selection, or explicitly specify `:sequential`, `:spawn`, `:fiber`, or `:fiber_pool`.
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

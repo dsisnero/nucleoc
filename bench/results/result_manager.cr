@@ -43,7 +43,7 @@ module NucleocBench
       filename = "#{@benchmark_name}_#{@timestamp.to_s("%Y%m%d_%H%M%S")}.json"
       filepath = File.join(dir_path, filename)
 
-      File.write(filepath, self.to_pretty_json)
+      File.write(filepath, to_pretty_json)
       filepath
     end
 
