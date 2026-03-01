@@ -111,42 +111,64 @@ module Nucleoc
 
   # A handle for adding items to a Nucleo worker.
   class Injector(T)
-    @items : Boxcar(T)
-    @notify : -> Nil
-    @release_callback : -> Nil
-    @generation : Int32
+    # Internal shared state
+    class Shared(T)
+      getter items : Boxcar(T)
+      getter notify : -> Nil
+      getter release_callback : -> Nil
+      getter generation : Int32
+      @released = Atomic(Bool).new(false)
 
-    def initialize(@items : Boxcar(T), @notify : -> Nil, @release_callback : -> Nil, @generation : Int32)
+      def initialize(@items : Boxcar(T), @notify : -> Nil, @release_callback : -> Nil, @generation : Int32)
+      end
+
+      def release : Bool
+        # Only release once, even if multiple Injector instances reference this Shared
+        # Use compare_and_set to ensure only one thread releases
+        old_value, success = @released.compare_and_set(false, true)
+        if success
+          @release_callback.call
+          true
+        else
+          false
+        end
+      end
+    end
+
+    @shared : Shared(T)
+
+    def initialize(items : Boxcar(T), notify : -> Nil, release_callback : -> Nil, generation : Int32)
+      @shared = Shared(T).new(items, notify, release_callback, generation)
     end
 
     # Explicitly release this injector
     def release : Nil
-      @release_callback.call
+      @shared.release
     end
 
     # Appends an element to the list of matched items.
     # This function is lock-free and wait-free.
     def push(value : T, &fill_columns : T, Array(Utf32String) -> Nil) : UInt32
-      index = @items.push(value, &fill_columns)
-      @notify.call
+      index = @shared.items.push(value, &fill_columns)
+      @shared.notify.call
       index.to_u32
     end
 
     # Appends multiple elements to the list of matched items.
     # This function is lock-free and wait-free.
     def extend(values : Enumerable(T), &fill_columns : T, Array(Utf32String) -> Nil) : Nil
-      @items.push_all(values, &fill_columns)
-      @notify.call
+      @shared.items.push_all(values, &fill_columns)
+      @shared.notify.call
     end
 
     # Returns the total number of items injected in the matcher.
     def injected_items : UInt32
-      @items.size.to_u32
+      @shared.items.size.to_u32
     end
 
     # Returns a reference to the item at the given index.
     def get(index : UInt32) : Item(T)?
-      if entry = @items.get_entry(index.to_i64)
+      if entry = @shared.items.get_entry(index.to_i64)
         if entry.active? && entry.value && entry.matcher_columns
           Item(T).new(entry.value.not_nil!, entry.matcher_columns.not_nil!)
         end
@@ -155,8 +177,8 @@ module Nucleoc
 
     # Clear all items.
     def clear : Nil
-      @items.clear
-      @notify.call
+      @shared.items.clear
+      @shared.notify.call
     end
   end
 
