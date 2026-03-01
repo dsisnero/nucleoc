@@ -4,15 +4,12 @@ require "./nucleo_native"
 
 # Main API for nucleoc fuzzy matching
 module Nucleoc
-  # Compile-time flag: is multithreading enabled?
-  # Parallel optimizations only make sense with -Dpreview_mt
-  # Without it, fibers run on single thread, so parallel has overhead but no benefit
-  {% if flag?(:preview_mt) %}
-    # Runtime constant set at compile time
-    PARALLEL_ENABLED = true
-  {% else %}
-    PARALLEL_ENABLED = false
-  {% end %}
+  # Parallel processing enabled flag
+  # Crystal 1.x requires -Dpreview_mt for true multithreading across CPU cores
+  # Without it, fibers run on single OS thread (parallel overhead but no benefit)
+  # We'll use a pragmatic approach: enable parallel when we have multiple CPUs
+  # Users can force disable with NUCLEOC_PARALLEL=false
+  PARALLEL_ENABLED = (ENV["NUCLEOC_PARALLEL"]? != "false") && System.cpu_count > 1
 
   @@pool_mutex = Mutex.new
   @@fiber_pools = Hash({Config, Int32}, FiberWorkerPool).new
@@ -58,7 +55,7 @@ module Nucleoc
         results << MatchResult.new(item, score)
       end
     end
-    results.sort! { |a, b| b.score <=> a.score } # descending by score
+    sort_match_results(results) # descending by score
     max_results ? results[0, max_results] : results
   end
 
@@ -78,7 +75,7 @@ module Nucleoc
     end
 
     # Sort descending by score
-    results.sort! { |a, b| b.score <=> a.score }
+    sort_match_results(results)
 
     # Apply max_results limit
     max_results ? results[0, max_results] : results
@@ -149,7 +146,7 @@ module Nucleoc
     end
 
     # Sort merged results and take top k
-    all_worker_results.sort! { |a, b| b.score <=> a.score }
+    sort_match_results(all_worker_results)
     all_worker_results[0, k]
   end
 
@@ -298,5 +295,20 @@ module Nucleoc
   def self.postfix_match(haystack : String, needle : String, config : Config = Config.new) : UInt16?
     matcher = Matcher.new(config)
     matcher.postfix_match(haystack, needle)
+  end
+
+  # Sort match results using ParSort for large arrays, regular sort for small ones
+  private def self.sort_match_results(results : Array(MatchResult)) : Nil
+    return if results.size <= 1
+
+    # Use ParSort for large result sets when parallel is enabled
+    if PARALLEL_ENABLED && results.size >= 10_000
+      # Create comparator for descending sort by score
+      is_less = ->(a : MatchResult, b : MatchResult) { a.score > b.score } # Note: reversed for descending
+      ParSort.sort(results, is_less)
+    else
+      # Regular sort for small arrays or when parallel disabled
+      results.sort! { |a, b| b.score <=> a.score }
+    end
   end
 end

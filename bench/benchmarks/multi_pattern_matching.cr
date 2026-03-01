@@ -20,15 +20,15 @@ module NucleocBench
       Benchmark.ips(calculation: config.calculation, warmup: config.warmup) do |x|
         x.report("multi_pattern score") do
           rows.each do |row|
-            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s) }
+            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s, s.ascii_only?) }
             pattern.score(utf32_row, matcher)
           end
         end
 
         x.report("multi_pattern score_parallel") do
           rows.each do |row|
-            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s) }
-            pattern.score_parallel(utf32_row, Nucleoc::Config::DEFAULT)
+            utf32_row = row.map { |s| Nucleoc::Utf32String.new(s, s.ascii_only?) }
+            pattern.score_parallel(utf32_row, matcher)
           end
         end
       end
